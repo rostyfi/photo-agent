@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"019e7d91-f56d-7795-9660-12d0fc8d5f40","timestamp":"2026-05-31T10:26:18.094Z","cwd":"/app"}
+{"type":"model_change","id":"e13838be","parentId":null,"timestamp":"2026-05-31T10:26:18.504Z","provider":"mistral","modelId":"devstral-2512"}
+{"type":"thinking_level_change","id":"0c75c3d2","parentId":"e13838be","timestamp":"2026-05-31T10:26:18.504Z","thinkingLevel":"off"}
+{"type":"message","id":"8a78b56b","parentId":"0c75c3d2","timestamp":"2026-05-31T10:26:22.264Z","message":{"role":"user","content":[{"type":"text","text":"test"}],"timestamp":1780223182253}}
+{"type":"message","id":"93ff8a53","parentId":"8a78b56b","timestamp":"2026-05-31T10:26:23.700Z","message":{"role":"assistant","content":[],"api":"mistral-conversations","provider":"mistral","model":"devstral-2512","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1780223183374,"errorMessage":"Mistral API error (404): {\n  \"message\":\"no Route matched with those values\",\n  \"request_id\":\"93f910415c683575910e5d455369dd47\"\n}"}}

@@ -1,0 +1,28 @@
+services:
+  photo-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: open-photo-agent
+    # Run as host user so bind-mounted folders are writable
+    user: "${USER_UID:-1000}:${USER_GID:-1000}"
+    # Map host port 8050 to container port 8050
+    ports:
+      - "8050:8050"
+    # Pass through LLM and Dash config as environment variables
+    environment:
+      - OPEN_PHOTO_AGENT_LLM_HOST=${OPEN_PHOTO_AGENT_LLM_HOST:-${OPEN_PHOTO_AGENT_OLLAMA_HOST:-192.168.0.150}}
+      - OPEN_PHOTO_AGENT_LLM_PORT=${OPEN_PHOTO_AGENT_LLM_PORT:-${OPEN_PHOTO_AGENT_OLLAMA_PORT:-11434}}
+      - OPEN_PHOTO_AGENT_LLM_MODEL=${OPEN_PHOTO_AGENT_LLM_MODEL:-${OPEN_PHOTO_AGENT_OLLAMA_MODEL:-gemma4:e2b-it-qat}}
+      - OPEN_PHOTO_AGENT_DASH_HOST=0.0.0.0
+      - OPEN_PHOTO_AGENT_DASH_PORT=${OPEN_PHOTO_AGENT_DASH_PORT:-8050}
+      - OPEN_PHOTO_AGENT_DASH_DEBUG=${OPEN_PHOTO_AGENT_DASH_DEBUG:-false}
+    # Restart policy
+    restart: unless-stopped
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

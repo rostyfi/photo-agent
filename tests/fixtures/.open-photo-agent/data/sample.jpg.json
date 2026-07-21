@@ -1,0 +1,6 @@
+{
+  "image_path": "/app/tests/fixtures/sample.jpg",
+  "success": false,
+  "error": "HTTPConnectionPool(host='192.168.0.150', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError(\"HTTPConnection(host='192.168.0.150', port=11434): Failed to establish a new connection: [Errno 113] No route to host\"))",
+  "error_code": "network_error"
+}

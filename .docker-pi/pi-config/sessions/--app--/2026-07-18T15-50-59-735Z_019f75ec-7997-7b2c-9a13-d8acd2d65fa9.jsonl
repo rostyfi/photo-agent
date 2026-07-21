@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"019f75ec-7997-7b2c-9a13-d8acd2d65fa9","timestamp":"2026-07-18T15:50:59.735Z","cwd":"/app"}
+{"type":"model_change","id":"540957e4","parentId":null,"timestamp":"2026-07-18T15:51:00.336Z","provider":"mistral","modelId":"mistral-medium-3.5"}
+{"type":"thinking_level_change","id":"da9469ba","parentId":"540957e4","timestamp":"2026-07-18T15:51:00.336Z","thinkingLevel":"high"}
+{"type":"message","id":"ed1bf492","parentId":"da9469ba","timestamp":"2026-07-18T15:51:13.252Z","message":{"role":"user","content":[{"type":"text","text":"exit"}],"timestamp":1784389873239}}
+{"type":"message","id":"727d0767","parentId":"ed1bf492","timestamp":"2026-07-18T15:51:16.566Z","message":{"role":"assistant","content":[],"api":"mistral-conversations","provider":"mistral","model":"mistral-medium-3.5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":1784389874213,"errorMessage":"Operation aborted"}}

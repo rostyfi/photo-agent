@@ -1,0 +1,45 @@
+# Python
+.venv
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment files (secrets)
+.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
+docker-compose.arm.yml
+.dockerignore
+
+# Logs
+*.log
+
+# Results / data
+features.json
+results.json
+photos/
+
+# Pi agent config (not needed for Docker build)
+.docker-pi
+.pi

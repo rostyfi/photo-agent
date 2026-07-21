@@ -1,0 +1,9 @@
+{"type":"session","version":3,"id":"019e6b44-6786-7c26-8b89-bf9b79d5b2b6","timestamp":"2026-05-27T21:08:25.606Z","cwd":"/app"}
+{"type":"model_change","id":"20217b2f","parentId":null,"timestamp":"2026-05-27T21:08:26.051Z","provider":"ollama","modelId":"llama3.1:8b"}
+{"type":"thinking_level_change","id":"f6f18f19","parentId":"20217b2f","timestamp":"2026-05-27T21:08:26.051Z","thinkingLevel":"off"}
+{"type":"model_change","id":"8e078353","parentId":"f6f18f19","timestamp":"2026-05-27T21:08:43.904Z","provider":"ollama","modelId":"qwen3:14b"}
+{"type":"message","id":"47f2b977","parentId":"8e078353","timestamp":"2026-05-27T21:08:46.595Z","message":{"role":"user","content":[{"type":"text","text":"test"}],"timestamp":1779916126592}}
+{"type":"message","id":"c308e58d","parentId":"47f2b977","timestamp":"2026-05-27T21:08:46.694Z","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"ollama","model":"qwen3:14b","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1779916126667,"errorMessage":"404 model 'qwen3:14b' not found"}}
+{"type":"model_change","id":"7d5817a1","parentId":"c308e58d","timestamp":"2026-05-27T21:08:55.092Z","provider":"ollama","modelId":"qwen3:14b"}
+{"type":"message","id":"337ca559","parentId":"7d5817a1","timestamp":"2026-05-27T21:08:57.839Z","message":{"role":"user","content":[{"type":"text","text":"test"}],"timestamp":1779916137838}}
+{"type":"message","id":"17d56665","parentId":"337ca559","timestamp":"2026-05-27T21:08:58.089Z","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"ollama","model":"qwen3:14b","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1779916138063,"errorMessage":"404 model 'qwen3:14b' not found"}}

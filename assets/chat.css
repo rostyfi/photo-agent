@@ -1,0 +1,78 @@
+/* Chat component scrollbar styling */
+#chat-response-container::-webkit-scrollbar,
+.chat-response::-webkit-scrollbar,
+.scrollable-dark::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+#chat-response-container::-webkit-scrollbar-track,
+.chat-response::-webkit-scrollbar-track,
+.scrollable-dark::-webkit-scrollbar-track {
+    background: #212529;
+    border-radius: 4px;
+}
+
+#chat-response-container::-webkit-scrollbar-thumb,
+.chat-response::-webkit-scrollbar-thumb,
+.scrollable-dark::-webkit-scrollbar-thumb {
+    background: #495057;
+    border-radius: 4px;
+}
+
+#chat-response-container::-webkit-scrollbar-thumb:hover,
+.chat-response::-webkit-scrollbar-thumb:hover,
+.scrollable-dark::-webkit-scrollbar-thumb:hover {
+    background: #6c757d;
+}
+
+/* For Firefox */
+#chat-response-container,
+.chat-response,
+.scrollable-dark {
+    scrollbar-width: thin;
+    scrollbar-color: #495057 #212529;
+}
+
+/* Loading spinner animation for chat */
+.spinner-chat {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 20px;
+}
+
+.spinner-chat div {
+    width: 8px;
+    height: 8px;
+    margin: 0 3px;
+    background-color: #0d6efd;
+    border-radius: 50%;
+    display: inline-block;
+    animation: sk-bouncedelay 1.4s infinite ease-in-out both;
+}
+
+.spinner-chat .bounce1 {
+    animation-delay: -0.32s;
+}
+
+.spinner-chat .bounce2 {
+    animation-delay: -0.16s;
+}
+
+.spinner-chat .bounce3 {
+    animation-delay: 0s;
+}
+
+@keyframes sk-bouncedelay {
+    0%, 80%, 100% {
+        transform: scale(0);
+        opacity: 0.5;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}

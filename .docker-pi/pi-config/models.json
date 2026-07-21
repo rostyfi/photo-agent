@@ -1,0 +1,18 @@
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://192.168.0.150:11434/v1",
+      "apiKey": "ollama",
+      "api": "openai-completions",
+      "models": [
+        { "id": "deepseek-v4-pro:cloud", "name": "DeepSeek V4 Pro Cloud", "contextWindow": 1000000 },
+        { "id": "gemma4:31b-cloud", "name": "Gemma 4 31B Cloud", "contextWindow": 128000 },
+        { "id": "kimi-k2.6:cloud",      "name": "Kimi K2.6 Cloud", "contextWindow": 256000 },
+        { "id": "minimax-m3:cloud", "name": "Minimax M3 Cloud", "contextWindow": 256000 },
+        { "id": "gemma4:12b", "name": "Gemma 4 12B", "contextWindow": 128000 },
+        { "id": "gemma4:12b-it-q8_0", "name": "Gemma 4 12B Q8", "contextWindow": 128000 },
+        { "id": "nemotron-3-ultra:cloud", "name": "Nemotron 3 Ultra Cloud", "contextWindow": 256000}
+      ]
+    }
+  }
+}

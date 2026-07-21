@@ -1,0 +1,5 @@
+services:
+  photo-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.arm
