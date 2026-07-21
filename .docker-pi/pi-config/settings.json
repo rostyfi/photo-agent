@@ -1,7 +1,0 @@
-{
-  "lastChangelogVersion": "0.80.6",
-  "defaultProvider": "mistral",
-  "defaultModel": "mistral-medium-3.5",
-  "defaultThinkingLevel": "max",
-  "theme": "dark"
-}

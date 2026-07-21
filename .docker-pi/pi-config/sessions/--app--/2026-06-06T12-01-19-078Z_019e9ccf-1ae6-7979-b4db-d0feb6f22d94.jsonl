@@ -1,6 +1,0 @@
-{"type":"session","version":3,"id":"019e9ccf-1ae6-7979-b4db-d0feb6f22d94","timestamp":"2026-06-06T12:01:19.078Z","cwd":"/app"}
-{"type":"model_change","id":"f8da11a5","parentId":null,"timestamp":"2026-06-06T12:01:19.583Z","provider":"ollama","modelId":"gemma4:31b-cloud"}
-{"type":"thinking_level_change","id":"0284d5d1","parentId":"f8da11a5","timestamp":"2026-06-06T12:01:19.583Z","thinkingLevel":"off"}
-{"type":"model_change","id":"340d834e","parentId":"0284d5d1","timestamp":"2026-06-06T12:01:27.576Z","provider":"ollama","modelId":"gemma4:12b"}
-{"type":"message","id":"9a452329","parentId":"340d834e","timestamp":"2026-06-06T12:01:29.919Z","message":{"role":"user","content":[{"type":"text","text":"test"}],"timestamp":1780747289911}}
-{"type":"message","id":"006b967d","parentId":"9a452329","timestamp":"2026-06-06T12:01:30.355Z","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"ollama","model":"gemma4:12b","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1780747289972,"errorMessage":"404 model 'gemma4:12b' not found"}}
