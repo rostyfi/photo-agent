@@ -1,5 +1,5 @@
 """
-File processing utilities for Open Photo Agent.
+File processing utilities for Local Photo Agent.
 
 This module provides a simple, database-backed approach to track and list
 files that need processing, replacing the complex batching logic.

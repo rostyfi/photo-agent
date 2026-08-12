@@ -1,4 +1,4 @@
-"""Vector embedding support for Open Photo Agent.
+"""Vector embedding support for Local Photo Agent.
 
 This module provides embedding generation and vector search capabilities
 for photo collections using Ollama vision models and vector search library.
@@ -30,7 +30,7 @@ Example usage:
     
     # Save to database
     from src.sidecar.database import FeaturesDatabase
-    db = FeaturesDatabase("/photos/.open-photo-agent/features.db")
+    db = FeaturesDatabase("/photos/.local-photo-agent/features.db")
     db.init_vector_search()  # Requires vector search library
     db.save_embedding("photo.jpg", "clip-vit-base-patch32", embedding)
     

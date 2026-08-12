@@ -143,7 +143,7 @@ class ChatService:
         examples = self._get_tool_examples()
         
         return (
-            "You are the Open Photo Agent, a chat assistant for a photo feature extraction system.\n"
+            "You are the Local Photo Agent, a chat assistant for a photo feature extraction system.\n"
             "You MUST follow these rules EXACTLY:\n\n"
             
             "RULE 1: If the user's intent matches ANY tool, respond with EXACTLY ONE tool command and NOTHING else.\n"

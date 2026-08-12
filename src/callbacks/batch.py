@@ -21,6 +21,7 @@ from dash import Input, Output, State, html
 
 from src.batch_state import write_batch_state, read_batch_state, clear_batch_state
 from src.config import ProcessingConfig
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.file_processing import ProcessableFileLister
 from src.sequential_processor import SequentialProcessor
 from src.state import reset_shutdown_event, request_shutdown
@@ -33,10 +34,10 @@ def _make_processing_config(host, port, model, backend, timeout, default_prompt,
     """Build a ProcessingConfig from form values."""
     return ProcessingConfig(
         backend="dry_run" if dry_run else (backend or "ollama"),
-        host=host or "192.168.0.150",
-        port=int(port) if port else 11434,
+        host=host or DEFAULT_LLM_HOST,
+        port=int(port) if port else DEFAULT_LLM_PORT,
         model=model,
-        timeout=int(timeout) if timeout else 120,
+        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
         default_prompt=default_prompt,
         embedding_enabled=bool(embedding_enabled) if embedding_enabled is not None else True,
         embedding_model=embedding_model or "nomic-embed-text",

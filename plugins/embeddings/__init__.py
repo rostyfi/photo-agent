@@ -1,4 +1,4 @@
-"""Embedding plugins for Open Photo Agent.
+"""Embedding plugins for Local Photo Agent.
 
 This package provides the plugin infrastructure for embedding backends.
 Currently only Ollama backend is supported.

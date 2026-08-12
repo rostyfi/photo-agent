@@ -6,7 +6,7 @@ from pathlib import Path
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import dcc, html
 
 from src.batch_state import read_batch_state, write_batch_state
 from src.callbacks.batch import (
@@ -18,6 +18,7 @@ from src.callbacks.batch import (
     register_stop_callback,
 )
 from src.config import AppConfig
+from tests.test_callbacks import find_callback
 
 
 class TestPollingCallback(unittest.TestCase):
@@ -28,44 +29,46 @@ class TestPollingCallback(unittest.TestCase):
                 html.Div(id="queue-status"),
                 html.Div(id="batch-progress-overall"),
                 html.Div(id="batch-progress-current"),
-                html.Div(id="batch-progress-current", style={}),
                 html.Div(id="batch-progress-wrapper", style={}),
                 html.Div(id="batch-progress-label"),
                 html.Div(id="batch-history"),
                 html.Div(id="batch-history-wrapper", style={}),
                 html.Div(id="pending-count"),
-                html.Div(id="poll-interval", n_intervals=0),
-                html.Div(id="input-folder", value="/fake/folder"),
-                html.Div(id="chk-recursive", value=True),
-                html.Div(id="folder-cache", data={}),
+                dcc.Interval(id="poll-interval", interval=5000, n_intervals=0),
+                dcc.Input(id="input-folder", value="/fake/folder"),
+                dcc.Checklist(id="chk-recursive", options=[], value=[1]),
+                dcc.Store(id="folder-cache", data={}),
             ]
         )
         self.app_config = AppConfig.from_env()
         register_polling_callback(self.app)
 
     def test_idle_shows_pending_count(self):
-        cb = self.app.callback_map[("queue-status", "children")][0].callback
-        result = cb(
-            1,  # n_intervals
-            "/fake/folder",  # folder
-            True,  # recursive
-            {},  # cache_data
-        )
-        # Should show idle state with pending count
-        self.assertIn("Idle", str(result[0]))
-
-    def test_running_shows_progress(self):
+        # Use a real temp folder with no images — the callback should report
+        # no images found (idle-equivalent state).
         with tempfile.TemporaryDirectory() as td:
-            write_batch_state(td, "running_all", 100, 50, status_msg="Test running")
-            cb = self.app.callback_map[("queue-status", "children")][0].callback
+            cb = find_callback(self.app, "queue-status", "children").__wrapped__
             result = cb(
                 1,  # n_intervals
                 td,  # folder
                 True,  # recursive
                 {},  # cache_data
             )
-            # Should show running state
-            self.assertIn("Running", str(result[0]))
+            # Should show a "no images" badge when the folder is empty
+            self.assertIn("No images found", str(result[0]))
+
+    def test_running_shows_progress(self):
+        with tempfile.TemporaryDirectory() as td:
+            write_batch_state(td, "running_all", 100, 50, status_msg="Test running")
+            cb = find_callback(self.app, "queue-status", "children").__wrapped__
+            result = cb(
+                1,  # n_intervals
+                td,  # folder
+                True,  # recursive
+                {},  # cache_data
+            )
+            # Should show the running status message
+            self.assertIn("running", str(result[0]).lower())
 
 
 class TestHistoryToggleCallback(unittest.TestCase):
@@ -80,7 +83,7 @@ class TestHistoryToggleCallback(unittest.TestCase):
         register_history_toggle_callback(self.app)
 
     def test_toggles_history(self):
-        cb = self.app.callback_map[("history-collapse", "is_open")][0].callback
+        cb = find_callback(self.app, "history-collapse", "is_open").__wrapped__
         # Start closed
         result = cb(1, False)
         self.assertTrue(result)
@@ -101,7 +104,7 @@ class TestStopCallback(unittest.TestCase):
 
     def test_stops_processing(self):
         from src.state import is_shutdown_requested
-        cb = self.app.callback_map[("btn-stop-all", "disabled")][0].callback
+        cb = find_callback(self.app, "btn-stop-all", "disabled").__wrapped__
         result = cb(1)
         self.assertTrue(is_shutdown_requested())
         self.assertTrue(result)

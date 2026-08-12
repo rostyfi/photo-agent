@@ -34,7 +34,7 @@ docker-compose.override.yml
 features.json
 results.json
 photos/
-.open-photo-agent/
+.local-photo-agent/
 
 # Disk cache for background callbacks
 cache/

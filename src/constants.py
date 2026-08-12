@@ -1,5 +1,5 @@
 """
-Centralized constants and error messages for Open Photo Agent.
+Centralized constants and error messages for Local Photo Agent.
 
 This module provides a single source of truth for all repeated strings,
 particularly error messages and configuration defaults, to reduce
@@ -70,6 +70,8 @@ PROCESSING_ERROR = "Processing error"
 
 # Default configuration values
 DEFAULT_LLM_HOST = "192.168.0.150"
+DEFAULT_LLM_PORT = 11434
+DEFAULT_LLM_TIMEOUT = 120
 DEFAULT_LLM_MODEL = "gemma4:e2b-it-qat"
 
 # =============================================================================

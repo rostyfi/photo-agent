@@ -1,4 +1,4 @@
-"""API handlers package for Open Photo Agent.
+"""API handlers package for Local Photo Agent.
 
 This package contains Flask route handlers extracted from app.py to improve
 modularity and reduce code size in the main application file.

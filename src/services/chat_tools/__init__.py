@@ -1,4 +1,4 @@
-"""Chat tools package for Open Photo Agent.
+"""Chat tools package for Local Photo Agent.
 
 This package provides a pluggable tool system for chat commands.
 Tools are dynamically discovered and loaded from this package.

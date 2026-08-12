@@ -1,5 +1,5 @@
 """
-Layout component builders for the Photo Agent web UI.
+Layout component builders for the Local Photo Agent web UI.
 
 This module contains helper functions to build reusable layout components,
 reducing complexity in the main layout.py file.

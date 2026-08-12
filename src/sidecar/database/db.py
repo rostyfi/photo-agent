@@ -1,5 +1,5 @@
 """
-SQLite features database for Open Photo Agent.
+SQLite features database for Local Photo Agent.
 
 Stores extraction results in the ``raw_features`` table and maintains
 normalised ``extracted_features``, ``feature_tags``, and an optional
@@ -33,9 +33,16 @@ logger = logging.getLogger(__name__)
 # Vector table name
 TABLE_VEC_EMBEDDINGS = "vec_embeddings"
 
+# Fixed dimension for the vec0 virtual table. Stored and query vectors are
+# padded/truncated to this size. For cosine similarity, zero-padding is
+# mathematically harmless (it adds nothing to the dot product or magnitude),
+# so models with smaller dimensions (e.g. nomic-embed-text at 768) search
+# correctly. The value must match the dimension used at table creation.
+VEC_TABLE_DIMENSION = 2048
+
 
 class FeaturesDatabase:
-    """SQLite features database for Open Photo Agent.
+    """SQLite features database for Local Photo Agent.
 
     Stores extraction results in the ``raw_features`` table and maintains
     normalised ``extracted_features``, ``feature_tags``, and an optional
@@ -149,10 +156,10 @@ class FeaturesDatabase:
     def default_db_path(folder: Union[str, Path]) -> Path:
         """Return the default features.db path for a given folder.
 
-        The database is placed inside ``.open-photo-agent/`` to match the
+        The database is placed inside ``.local-photo-agent/`` to match the
         existing per-folder convention used by sidecars and the processing tracker.
         """
-        return Path(folder) / ".open-photo-agent" / "features.db"
+        return Path(folder) / ".local-photo-agent" / "features.db"
 
     @contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -456,13 +463,13 @@ class FeaturesDatabase:
         except (sqlite3.OperationalError, sqlite3.DatabaseError):
             pass
         
-        # Create vec0 virtual table with 2048 dimensions
+        # Create vec0 virtual table
         try:
             conn.execute(
-                """
+                f"""
                 CREATE VIRTUAL TABLE vec_embeddings USING vec0(
                     image_path TEXT,
-                    embedding float[2048]
+                    embedding float[{VEC_TABLE_DIMENSION}]
                 )
                 """
             )
@@ -478,6 +485,25 @@ class FeaturesDatabase:
     def _format_vector_for_vec(self, vector: List[float]) -> str:
         """Format a vector for sqlite-vec."""
         return "[" + ", ".join(f"{v:.15g}" for v in vector) + "]"
+
+    @staticmethod
+    def _normalize_vector(vector: List[float]) -> List[float]:
+        """Pad or truncate a vector to ``VEC_TABLE_DIMENSION``.
+
+        Cosine similarity is invariant to zero-padding, so padding shorter
+        vectors with zeros preserves correct search results while satisfying
+        the vec0 table's fixed dimension.
+        """
+        dim = VEC_TABLE_DIMENSION
+        if len(vector) < dim:
+            padded = vector + [0.0] * (dim - len(vector))
+            logger.warning(f"Padding vector from {len(vector)} to {dim} dimensions")
+            return padded
+        if len(vector) > dim:
+            truncated = vector[:dim]
+            logger.warning(f"Truncating vector from {len(vector)} to {dim} dimensions")
+            return truncated
+        return vector
     
     def save_to_vec_table(
         self, 
@@ -494,36 +520,33 @@ class FeaturesDatabase:
         if not result:
             logger.warning("vec_embeddings table does not exist")
             return False
-        
-        # Pad or truncate to 2048 dimensions
-        TARGET_DIM = 2048
-        if len(vector) < TARGET_DIM:
-            vector_padded = vector + [0.0] * (TARGET_DIM - len(vector))
-            logger.warning(f"Padding vector from {len(vector)} to {TARGET_DIM} dimensions")
-        elif len(vector) > TARGET_DIM:
-            vector_padded = vector[:TARGET_DIM]
-            logger.warning(f"Truncating vector from {len(vector)} to {TARGET_DIM} dimensions")
-        else:
-            vector_padded = vector
-        
+
+        # The vec0 extension must be loaded on this connection to operate on
+        # the virtual table (each connection loads extensions independently).
+        self._ensure_extension_loaded(conn)
+
+        # Pad or truncate to the fixed vec0 table dimension
+        vector_padded = self._normalize_vector(vector)
+
         vector_str = self._format_vector_for_vec(vector_padded)
-        escaped_path = image_path.replace("'", "''")
-        
-        # Check if entry already exists
+
+        # Check if entry already exists (parameterized to avoid SQL injection)
         existing = conn.execute(
-            f"SELECT 1 FROM vec_embeddings WHERE image_path = '{escaped_path}'"
+            "SELECT 1 FROM vec_embeddings WHERE image_path = ?", (image_path,)
         ).fetchone()
-        
+
         try:
             if existing:
                 conn.execute(
-                    f"UPDATE vec_embeddings SET embedding = '{vector_str}' "
-                    f"WHERE image_path = '{escaped_path}'"
+                    "UPDATE vec_embeddings SET embedding = ? "
+                    "WHERE image_path = ?",
+                    (vector_str, image_path),
                 )
             else:
                 conn.execute(
-                    f"INSERT INTO vec_embeddings (image_path, embedding) "
-                    f"VALUES ('{escaped_path}', '{vector_str}')"
+                    "INSERT INTO vec_embeddings (image_path, embedding) "
+                    "VALUES (?, ?)",
+                    (image_path, vector_str),
                 )
             conn.commit()
             return True
@@ -538,9 +561,8 @@ class FeaturesDatabase:
     ) -> bool:
         """Delete a vector from the vec_embeddings virtual table."""
         try:
-            escaped_path = image_path.replace("'", "''")
             conn.execute(
-                f"DELETE FROM vec_embeddings WHERE image_path = '{escaped_path}'"
+                "DELETE FROM vec_embeddings WHERE image_path = ?", (image_path,)
             )
             conn.commit()
             return True
@@ -556,9 +578,9 @@ class FeaturesDatabase:
     ) -> Optional[List[float]]:
         """Retrieve a vector from the vec_embeddings virtual table."""
         try:
-            escaped_path = image_path.replace("'", "''")
             row = conn.execute(
-                f"SELECT embedding FROM vec_embeddings WHERE image_path = '{escaped_path}'"
+                "SELECT embedding FROM vec_embeddings WHERE image_path = ?",
+                (image_path,),
             ).fetchone()
             
             if row and row[0]:
@@ -578,18 +600,22 @@ class FeaturesDatabase:
         """Find images similar to the query vector using sqlite-vec."""
         if not query_vector:
             raise ValueError("Query vector cannot be empty")
-        
+
+        # Normalize the query vector to the fixed vec0 table dimension so it
+        # matches the dimension of the stored (padded) vectors.
+        query_vector = self._normalize_vector(query_vector)
         vector_str = self._format_vector_for_vec(query_vector)
         
         try:
             cursor = conn.execute(
-                f"""
+                """
                 SELECT image_path, 1.0 - distance as similarity
                 FROM vec_embeddings
-                WHERE embedding match json_array_to_vec0('{vector_str}')
+                WHERE embedding MATCH ?
                 ORDER BY distance ASC
-                LIMIT {limit}
-                """
+                LIMIT ?
+                """,
+                (vector_str, limit),
             )
             
             results = []
@@ -751,6 +777,9 @@ class FeaturesDatabase:
             raise FileNotFoundError(f"Database not found: {self.db_path}")
 
         with self.get_connection() as conn:
+            # Enforce read-only mode to prevent destructive statements
+            # (DELETE/DROP/UPDATE) coming from the SQL explorer UI.
+            conn.execute("PRAGMA query_only = ON")
             cursor = conn.execute(sql)
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
@@ -1351,6 +1380,10 @@ class FeaturesDatabase:
             return []
 
         with self.get_connection() as conn:
+            # The vec0 extension must be loaded on this connection before
+            # querying the virtual table (each connection loads extensions
+            # independently).
+            self._ensure_extension_loaded(conn)
             # Use vec_find_similar for sqlite-vec search
             return self.vec_find_similar(conn, query_vector, limit=limit)
 

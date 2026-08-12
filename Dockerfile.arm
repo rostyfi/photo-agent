@@ -1,4 +1,4 @@
-# ARM64 (Raspberry Pi) specific Dockerfile for Open Photo Agent
+# ARM64 (Raspberry Pi) specific Dockerfile for Local Photo Agent
 # Uses pre-built ARM64 wheels for sqlite-vec (available since 0.1.9a1)
 
 FROM python:3.12-slim AS builder
@@ -29,7 +29,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV OPEN_PHOTO_AGENT_DASH_HOST=0.0.0.0
+ENV LOCAL_PHOTO_AGENT_DASH_HOST=0.0.0.0
 
 WORKDIR /app
 

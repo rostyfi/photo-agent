@@ -1,5 +1,5 @@
 """
-Simple Sequential Processor for Open Photo Agent.
+Simple Sequential Processor for Local Photo Agent.
 
 This module provides straightforward sequential processing of images
 without batch-specific infrastructure. It processes images one at a time
@@ -134,7 +134,7 @@ class SequentialProcessor:
             logger.error(
                 f"Failed to create embedding generator: {e}. "
                 f"Available backends: {available}. "
-                f"Check OPEN_PHOTO_AGENT_EMBEDDING_BACKEND environment variable. "
+                f"Check LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND environment variable. "
                 f"{VEC_REQUIRED}"
             )
             self._embedding_generator = None

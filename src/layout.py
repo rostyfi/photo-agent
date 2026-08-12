@@ -1,5 +1,5 @@
 """
-Main layout for the Photo Agent web UI.
+Main layout for the Local Photo Agent web UI.
 
 This module builds the complete Dash Bootstrap layout by composing
 reusable component functions from layout_components.py.
@@ -57,7 +57,7 @@ def create_layout(app_config: AppConfig):
                         className="mb-3",
                     ),
                     dbc.Col(
-                        html.H2("Photo Agent", className="text-center my-3"),
+                        html.H2("Local Photo Agent", className="text-center my-3"),
                         width=8,
                         className="d-flex justify-content-center",
                     ),
@@ -88,9 +88,6 @@ def create_layout(app_config: AppConfig):
             # Modals
             build_settings_modal(app_config),
             build_sql_explorer_modal(),
-
-            # Health status
-            dbc.Row(dbc.Col(html.Div(id="health-status"))),
 
             # Tools section (hidden by default, shown when mode is "tools")
             build_tools_section(app_config),
@@ -133,7 +130,7 @@ def create_layout(app_config: AppConfig):
             # Footer
             html.Footer(
                 html.P(
-                    f"Photo Agent · {datetime.now().year}",
+                    f"Local Photo Agent · {datetime.now().year}",
                     className="text-center text-muted mb-0",
                 )
             ),

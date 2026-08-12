@@ -18,7 +18,7 @@ import threading
 from pathlib import Path
 from typing import Dict
 
-_SHUTDOWN_FLAG_PATH = Path(tempfile.gettempdir()) / "open_photo_agent_shutdown.flag"
+_SHUTDOWN_FLAG_PATH = Path(tempfile.gettempdir()) / "local_photo_agent_shutdown.flag"
 
 _shutdown_event = threading.Event()
 

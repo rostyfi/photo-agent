@@ -1,5 +1,5 @@
 """
-Photo discovery and processing state tracking for Open Photo Agent.
+Photo discovery and processing state tracking for Local Photo Agent.
 
 This module provides:
 - PhotoList: Discovers image files in directories
@@ -38,10 +38,10 @@ def _db_cache_key(image_dir: str) -> Tuple:
     # Check both possible paths (they should be the same, but check both for safety)
     paths_to_check = [
         db_path,
-        Path(image_dir) / ".open-photo-agent" / "features.db",
+        Path(image_dir) / ".local-photo-agent" / "features.db",
         # Also check WAL files for WAL mode databases
         Path(str(db_path) + "-wal"),
-        Path(image_dir) / ".open-photo-agent" / "features.db-wal",
+        Path(image_dir) / ".local-photo-agent" / "features.db-wal",
     ]
     
     for p in paths_to_check:

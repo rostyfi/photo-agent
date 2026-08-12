@@ -1,5 +1,5 @@
 """
-Simplified Coordinator for Open Photo Agent.
+Simplified Coordinator for Local Photo Agent.
 
 This module provides simple sequential processing without batch-specific infrastructure.
 """

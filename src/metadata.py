@@ -1,5 +1,5 @@
 """
-Image Metadata Extraction for Open Photo Agent.
+Image Metadata Extraction for Local Photo Agent.
 
 Extracts EXIF and other metadata from image files using Pillow.
 Handles various image formats including JPEG, PNG, HEIC, etc.
@@ -280,9 +280,10 @@ def extract_metadata(image_path: str) -> ImageMetadata:
                     33434: ('exposure_time', _get_exif_tag),
                     33437: ('f_number', _get_exif_tag),
                     34855: ('iso_speed', _get_exif_tag),
-                    36867: ('focal_length', _get_exif_tag),
-                    37386: ('aperture_value', _get_exif_tag),
-                    41985: ('focal_length_35mm', _get_exif_tag),
+                    36867: ('date_taken', _get_exif_tag),
+                    37378: ('aperture_value', _get_exif_tag),
+                    37386: ('focal_length', _get_exif_tag),
+                    41989: ('focal_length_35mm', _get_exif_tag),
                     42034: ('lens_make', _get_exif_tag),
                     42035: ('lens_model', _get_exif_tag),
                     40091: ('camera_serial', _get_exif_tag),

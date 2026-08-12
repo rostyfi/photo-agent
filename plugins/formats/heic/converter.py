@@ -23,7 +23,7 @@ _DEFAULT_QUALITY = 95
 
 
 def _env_quality() -> int:
-    raw = os.getenv("OPEN_PHOTO_AGENT_HEIC_JPEG_QUALITY")
+    raw = os.getenv("LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY")
     if raw is None:
         return _DEFAULT_QUALITY
     try:

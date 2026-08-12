@@ -17,12 +17,12 @@ class TestWriteBatchState(unittest.TestCase):
 
     def test_writes_file_at_expected_path(self):
         write_batch_state(self.folder, "running", 10, 0)
-        p = Path(self.folder) / ".open-photo-agent" / "batch_state.json"
+        p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         self.assertTrue(p.exists())
 
     def test_file_contains_core_fields(self):
         write_batch_state(self.folder, "running", 10, 5)
-        p = Path(self.folder) / ".open-photo-agent" / "batch_state.json"
+        p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         data = json.loads(p.read_text(encoding="utf-8"))
         self.assertEqual(data["status"], "running")
         self.assertEqual(data["total"], 10)
@@ -31,7 +31,7 @@ class TestWriteBatchState(unittest.TestCase):
 
     def test_extra_kwargs_are_included(self):
         write_batch_state(self.folder, "running_all", 100, 0, status_msg="Process All started")
-        p = Path(self.folder) / ".open-photo-agent" / "batch_state.json"
+        p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         data = json.loads(p.read_text(encoding="utf-8"))
         self.assertEqual(data["status_msg"], "Process All started")
 
@@ -42,7 +42,7 @@ class TestWriteBatchState(unittest.TestCase):
             max_duration_ms=500.0,
             avg_duration_ms=250.0,
         )
-        p = Path(self.folder) / ".open-photo-agent" / "batch_state.json"
+        p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         data = json.loads(p.read_text(encoding="utf-8"))
         self.assertEqual(data["min_duration_ms"], 100.0)
         self.assertEqual(data["max_duration_ms"], 500.0)
@@ -54,7 +54,7 @@ class TestWriteBatchState(unittest.TestCase):
         write_batch_state(self.folder, "done", 10, 10,
                           avg_duration_ms=123.0)
 
-        p = Path(self.folder) / ".open-photo-agent" / "batch_state.json"
+        p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         data = json.loads(p.read_text(encoding="utf-8"))
         self.assertEqual(data["status"], "done")
         self.assertEqual(data["avg_duration_ms"], 123.0)
@@ -85,7 +85,7 @@ class TestReadBatchState(unittest.TestCase):
         self.assertEqual(data["status"], "done")
 
     def test_returns_none_for_invalid_json(self):
-        p = Path(self.folder) / ".open-photo-agent"
+        p = Path(self.folder) / ".local-photo-agent"
         p.mkdir(parents=True, exist_ok=True)
         (p / "batch_state.json").write_text("not valid json", encoding="utf-8")
         result = read_batch_state(self.folder)

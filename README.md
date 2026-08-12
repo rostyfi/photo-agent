@@ -1,4 +1,4 @@
-# Open Photo Agent
+# Local Photo Agent
 
 A lightweight Python application for extracting structured features, descriptions, and metadata from photos using Ollama vision models over a local network.
 
@@ -63,7 +63,7 @@ For best performance with large datasets, use sqlite-vec:
 If sqlite-vec cannot be installed (e.g., in Docker containers without extension loading support), the application automatically falls back to REST-based vector search:
 
 - **No sqlite-vec required** — Uses Python-based cosine similarity calculations
-- **Works in Docker** — Tested in the open-photo-agent container
+- **Works in Docker** — Tested in the local-photo-agent container
 - **Slower for large datasets** — Loads all embeddings into memory for comparison
 - **Same functionality** — All vector search features work identically
 
@@ -121,7 +121,7 @@ docker compose logs -f
 docker compose down
 ```
 
-**Note:** Update `OPEN_PHOTO_AGENT_OLLAMA_HOST` in your `.env` file or `docker-compose.yml` if your Ollama server is on a different IP.
+**Note:** Update `LOCAL_PHOTO_AGENT_LLM_HOST` in your `.env` file or `docker-compose.yml` if your Ollama server is on a different IP.
 
 ### Mounting a folder for processing inside Docker
 
@@ -160,9 +160,6 @@ python main.py ./photos --resume
 # Force reprocess all images, ignoring previous progress
 python main.py ./photos --no-resume
 
-# Control batch size (images per batch; 0 = no limit)
-python main.py ./photos --batch-size 50
-
 # Vector embedding options
 # Generate embeddings (enabled by default)
 python main.py ./photos
@@ -195,7 +192,7 @@ Whenever the app processes an image inside a folder, the result is stored in a l
 ```
 my-photos/
 ├── vacation.jpg
-└── .open-photo-agent/
+└── .local-photo-agent/
     ├── batch_state.json       # Web UI batch progress summary
     └── features.db            # SQLite database (raw + normalised data + tracking)
 ```
@@ -216,12 +213,12 @@ The `features.db` SQLite database includes:
 
 Open [http://localhost:8050](http://localhost:8050) after starting the app.
 
-1. **Settings**: Enter the LLM host, port, model, and **Batch Size** (images processed per batch).
+1. **Settings**: Enter the LLM host, port, and model.
 2. **Upload Images**: Drag & drop or select files, then click **Extract Features**
 3. **Process Server Folder**: Type an absolute folder path (e.g. `/photos`), optionally tick *Scan sub-folders*, then click **Process Folder**.  
    The folder must be readable by the server/container running the app.
 
-   **Database storage:** When processing a folder via the web UI, results are stored in a SQLite `features.db` database inside `.open-photo-agent/` in the same folder.
+   **Database storage:** When processing a folder via the web UI, results are stored in a SQLite `features.db` database inside `.local-photo-agent/` in the same folder.
 4. **Search Photos** (below SQL Explorer): After processing a folder, use the search card to find photos by description, subjects, or tags via full-text search.
 5. **Tag Cloud** (below Search Photos): After processing a folder, click **Load Tag Cloud** to see a visual cloud of all extracted tags sized by frequency. Click any tag to add it as an active filter, then click additional tags to narrow the results with **AND** semantics. Active filters appear as removable pill badges above the cloud. Click a pill (or the tag again) to remove it, or press **Clear filters** to reset the chain. Changing the folder automatically clears the tag chain. Click any thumbnail to open the detail modal or fullscreen viewer — navigation arrows will only cycle through the currently filtered subset.
 6. **Closest Photos** (below Tag Cloud): Enter a natural language description (e.g., "a dog running on the beach") and click **Find Similar** to discover the top 10 most semantically similar photos in the current folder using vector embeddings. Each result shows a similarity percentage. Click any thumbnail to open the detail modal or fullscreen viewer.
@@ -250,28 +247,42 @@ The web application (`app.py`) provides several REST API endpoints for programma
 | POST | `/_api/chat` | Send a chat message to Ollama and get a response |
 | POST | `/_api/find_similar` | Find similar images using vector embeddings |
 | GET | `/_api/test_rest_vector_search` | Test REST-based vector search functionality |
-| GET | `/_api/test_vec` | Test vector storage in database |
+| GET | `/_api/test_store_vector` | Test storing a vector in the database |
 | GET | `/_api/test_vector_roundtrip` | Test vector storage and retrieval |
 | POST | `/_api/store_vector` | Store a vector embedding in the database |
 | GET | `/_api/get_vector` | Retrieve a vector embedding from the database |
-| GET | `/_api/test_vec_db` | Check vector database status |
 
 ### Chat API Example
+
+The `/_api/chat` endpoint accepts a JSON payload with the following fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `message` | yes | The chat message to send |
+| `host` | no | LLM server host (defaults to config `LOCAL_PHOTO_AGENT_LLM_HOST`) |
+| `port` | no | LLM server port (defaults to config `LOCAL_PHOTO_AGENT_LLM_PORT`) |
+| `model` | no | LLM model tag (defaults to config `LOCAL_PHOTO_AGENT_LLM_MODEL`) |
+| `folder` | no | Folder path for chat tools that query a processed database |
+| `history` | no | Prior conversation history as a list of messages |
 
 ```bash
 curl -X POST http://localhost:8050/_api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Describe this photo", "images": ["base64_encoded_image"]}'
+  -d '{"message": "Describe this photo", "folder": "/photos", "history": []}'
 ```
 
 Response:
+
 ```json
 {
+  "status": "success",
   "response": "This is a beautiful landscape photo with...",
-  "model": "gemma4:e2b-it-qat",
-  "done": true
+  "sender": "assistant",
+  "model": "gemma4:e2b-it-qat"
 }
 ```
+
+When the chat service returns a typed response (e.g., photo results), the response includes an additional `response_type` field (e.g., `"photos"`).
 
 ### Find Similar API Example
 
@@ -369,6 +380,9 @@ print(f"Processed {results['processed']} images, {results['successes']} succeede
 │   ├── simple_processing_tracker.py # Simple database-based processing tracker
 │   ├── metadata.py       # EXIF/IPTC/XMP metadata extraction
 │   ├── file_processing.py # File processing utilities
+│   ├── api/             # REST API handlers
+│   │   ├── __init__.py
+│   │   └── chat.py      # /_api/chat endpoint handler
 │   ├── sidecar/         # Sidecar persistence
 │   │   ├── __init__.py
 │   │   ├── store.py     # AbstractSidecarStore
@@ -385,7 +399,21 @@ print(f"Processed {results['processed']} images, {results['successes']} succeede
 │   │   └── availability.py # sqlite-vec availability checking
 │   ├── services/         # Service layer
 │   │   ├── __init__.py
-│   │   └── chat.py       # Chat service
+│   │   ├── chat.py       # ChatService
+│   │   ├── chat_response.py # ChatResponse dataclass
+│   │   └── chat_tools/   # Chat command tools (auto-discovered)
+│   │       ├── __init__.py
+│   │       ├── loader.py # Tool auto-discovery and registration
+│   │       ├── base.py   # BaseTool class
+│   │       ├── about.py  # /about tool
+│   │       ├── count.py  # /count tool
+│   │       ├── find.py   # /find tool
+│   │       ├── process.py # /process tool
+│   │       ├── scan.py   # /scan tool
+│   │       ├── status.py # /status tool
+│   │       └── tools_tool.py # /tools tool
+│   ├── coordinator/      # Processing coordination
+│   │   └── __init__.py
 │   ├── callbacks/        # Dash UI callbacks
 │   │   ├── __init__.py
 │   │   ├── batch.py      # Batch processing callbacks
@@ -411,6 +439,7 @@ print(f"Processed {results['processed']} images, {results['successes']} succeede
 │   │   ├── __init__.py
 │   │   ├── base.py       # Backward-compat re-exports
 │   │   ├── ollama.py     # OllamaPhotoExtractor
+│   │   ├── chat.py       # OllamaChatClient (chat client)
 │   │   ├── dry_run.py    # DryRunPhotoExtractor
 │   │   ├── factory.py    # create_extractor() factory
 │   │   ├── registry.py   # Backend registration
@@ -420,13 +449,13 @@ print(f"Processed {results['processed']} images, {results['successes']} succeede
 │   │       │   └── __init__.py
 │   │       └── dry_run/
 │   │           └── __init__.py
-│   └── formats/          # Image format plugins
-│       ├── __init__.py
-│       ├── image.py      # read_image_bytes() with auto-discovery
-│       ├── registry.py   # Format reader registry
-│       └── heic/
-│           ├── __init__.py
-│           └── converter.py # HEIC/HEIF to JPEG conversion
+│   ├── formats/          # Image format plugins
+│   │   ├── __init__.py
+│   │   ├── image.py      # read_image_bytes() with auto-discovery
+│   │   ├── registry.py   # Format reader registry
+│   │   └── heic/
+│   │       ├── __init__.py
+│   │       └── converter.py # HEIC/HEIF to JPEG conversion
 │   └── embeddings/       # Embedding backend plugins
 │       ├── __init__.py
 │       └── backends/

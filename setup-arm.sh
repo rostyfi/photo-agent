@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARM64 (Raspberry Pi) setup and run for Open Photo Agent via Docker Compose
+# ARM64 (Raspberry Pi) setup and run for Local Photo Agent via Docker Compose
 #
 # This script uses Dockerfile.arm which uses pre-built ARM64 wheels for sqlite-vec
 # (available since sqlite-vec 0.1.9a1).
@@ -71,7 +71,7 @@ EOF
 
 echo "ARM64 Dockerfile override created."
 echo "================================================"
-echo "Open Photo Agent - ARM64 Docker Setup"
+echo "Local Photo Agent - ARM64 Docker Setup"
 echo "================================================"
 
 # Display cache status

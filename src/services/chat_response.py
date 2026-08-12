@@ -1,4 +1,4 @@
-"""Chat response dataclass for Open Photo Agent.
+"""Chat response dataclass for Local Photo Agent.
 
 This module contains the ChatResponse dataclass which is used throughout
 the chat service and tools for structured responses.

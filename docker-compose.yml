@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: open-photo-agent
+    container_name: local-photo-agent
     # Run as host user so bind-mounted folders are writable
     user: "${USER_UID:-1000}:${USER_GID:-1000}"
     # Map host port 8050 to container port 8050
@@ -11,12 +11,12 @@ services:
       - "8050:8050"
     # Pass through LLM and Dash config as environment variables
     environment:
-      - OPEN_PHOTO_AGENT_LLM_HOST=${OPEN_PHOTO_AGENT_LLM_HOST:-${OPEN_PHOTO_AGENT_OLLAMA_HOST:-192.168.0.150}}
-      - OPEN_PHOTO_AGENT_LLM_PORT=${OPEN_PHOTO_AGENT_LLM_PORT:-${OPEN_PHOTO_AGENT_OLLAMA_PORT:-11434}}
-      - OPEN_PHOTO_AGENT_LLM_MODEL=${OPEN_PHOTO_AGENT_LLM_MODEL:-${OPEN_PHOTO_AGENT_OLLAMA_MODEL:-gemma4:e2b-it-qat}}
-      - OPEN_PHOTO_AGENT_DASH_HOST=0.0.0.0
-      - OPEN_PHOTO_AGENT_DASH_PORT=${OPEN_PHOTO_AGENT_DASH_PORT:-8050}
-      - OPEN_PHOTO_AGENT_DASH_DEBUG=${OPEN_PHOTO_AGENT_DASH_DEBUG:-false}
+      - LOCAL_PHOTO_AGENT_LLM_HOST=${LOCAL_PHOTO_AGENT_LLM_HOST:-${LOCAL_PHOTO_AGENT_OLLAMA_HOST:-192.168.0.150}}
+      - LOCAL_PHOTO_AGENT_LLM_PORT=${LOCAL_PHOTO_AGENT_LLM_PORT:-${LOCAL_PHOTO_AGENT_OLLAMA_PORT:-11434}}
+      - LOCAL_PHOTO_AGENT_LLM_MODEL=${LOCAL_PHOTO_AGENT_LLM_MODEL:-${LOCAL_PHOTO_AGENT_OLLAMA_MODEL:-gemma4:e2b-it-qat}}
+      - LOCAL_PHOTO_AGENT_DASH_HOST=0.0.0.0
+      - LOCAL_PHOTO_AGENT_DASH_PORT=${LOCAL_PHOTO_AGENT_DASH_PORT:-8050}
+      - LOCAL_PHOTO_AGENT_DASH_DEBUG=${LOCAL_PHOTO_AGENT_DASH_DEBUG:-false}
     # Restart policy
     restart: unless-stopped
     # Health check

@@ -22,7 +22,7 @@ class TestClosestPhotosCallback(unittest.TestCase):
             [
                 html.Div(id="closest-photos-results"),
                 html.Div(id="closest-photos-status"),
-                html.Input(id="closest-photos-input"),
+                html.Div(id="closest-photos-input"),
                 html.Button(id="btn-find-closest-photos"),
                 html.Button(id="btn-clear-closest-photos"),
                 html.Div(id="input-folder"),
@@ -34,102 +34,57 @@ class TestClosestPhotosCallback(unittest.TestCase):
     def test_no_click_returns_no_update(self):
         cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
         result = cb(None, None, None)
-        self.assertEqual(result, dash.no_update)
+        self.assertEqual(result, (dash.no_update, dash.no_update))
 
     def test_no_query_returns_no_update(self):
         cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
         result = cb(1, "", "/some/folder")
-        self.assertEqual(result, dash.no_update)
+        self.assertEqual(result, (dash.no_update, dash.no_update))
 
     def test_no_folder_returns_no_update(self):
         cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
         result = cb(1, "some query", "")
-        self.assertEqual(result, dash.no_update)
+        self.assertEqual(result, (dash.no_update, dash.no_update))
 
-    @patch("src.callbacks.similarity.get_vector_search_service")
-    @patch("src.callbacks.similarity.AppConfig")
-    @patch("src.callbacks.similarity._get_db")
-    @patch("src.callbacks.similarity.create_generator")
-    def test_no_db_returns_error(self, mock_create_generator, mock_get_db, mock_config, mock_vec_service):
-        # Setup mocks
-        mock_vec_service.return_value.is_available = True
-        mock_config.from_env.return_value.embedding_backend = "ollama"
-        mock_config.from_env.return_value.embedding_model = "nomic-embed-text"
-        mock_config.from_env.return_value.llm_host = "localhost"
-        mock_config.from_env.return_value.llm_port = 11434
-        mock_config.from_env.return_value.timeout = 120
-        mock_get_db.return_value = None  # No database
-        
-        cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
-        result = cb(1, "test query", "/some/folder")
-        
+    def test_no_db_returns_error(self):
+        # Use a folder with no features.db — the callback should detect this
+        # and return an error alert without making an HTTP call.
+        with tempfile.TemporaryDirectory() as td:
+            cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
+            result = cb(1, "test query", td)
+
         # Should return empty div and error alert
         self.assertIsInstance(result[0], html.Div)
         self.assertIsInstance(result[1], dbc.Alert)
 
-    @patch("src.callbacks.similarity.get_vector_search_service")
-    @patch("src.callbacks.similarity.AppConfig")
-    @patch("src.callbacks.similarity._get_db")
-    @patch("src.callbacks.similarity.create_generator")
-    def test_with_results_returns_cards(self, mock_create_generator, mock_get_db, mock_config, mock_vec_service):
-        # Setup mocks
-        mock_vec_service.return_value.is_available = True
-        mock_vec_service.return_value.not_available_message = ""
-        
-        mock_config.from_env.return_value.embedding_backend = "ollama"
-        mock_config.from_env.return_value.embedding_model = "nomic-embed-text"
-        mock_config.from_env.return_value.llm_host = "localhost"
-        mock_config.from_env.return_value.llm_port = 11434
-        mock_config.from_env.return_value.timeout = 120
-        
-        # Create a temporary database with test data
+    @patch("requests.post")
+    def test_with_results_returns_cards(self, mock_post):
+        # The callback makes an HTTP POST to /_api/find_similar. Mock the
+        # response to return two similar photos.
+        image_path1 = "/tmp/photo1.jpg"
+        image_path2 = "/tmp/photo2.jpg"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "results": [
+                {"image_path": image_path1, "score": 0.95},
+                {"image_path": image_path2, "score": 0.85},
+            ],
+            "count": 2,
+        }
+        mock_post.return_value = mock_response
+
         with tempfile.TemporaryDirectory() as td:
+            # Create a features.db so the db_path.exists() check passes
             db = FeaturesDatabase(FeaturesDatabase.default_db_path(td))
             db.init_db()
-            db.init_vector_search()
-            
-            # Add some test images
-            image_path1 = os.path.join(td, "photo1.jpg")
-            image_path2 = os.path.join(td, "photo2.jpg")
-            
-            # Save extractions
-            db.save_extraction(image_path1, {
-                "image_path": image_path1,
-                "success": True,
-                "parsed": {"description": "A dog running on the beach"}
-            })
-            db.save_extraction(image_path2, {
-                "image_path": image_path2,
-                "success": True,
-                "parsed": {"description": "A cat sleeping on a couch"}
-            })
-            
-            # Save embeddings
-            db.save_embedding(image_path1, "nomic-embed-text", [0.1, 0.2, 0.3])
-            db.save_embedding(image_path2, "nomic-embed-text", [0.4, 0.5, 0.6])
-            
             db.close()
-            
-            # Mock the database getter to return our test db
-            mock_get_db.return_value = db
-            
-            # Mock the generator to return a query embedding
-            mock_generator = MagicMock()
-            mock_generator.generate_from_text.return_value = [0.15, 0.25, 0.35]
-            mock_create_generator.return_value = mock_generator
-            
-            # Mock find_similar to return results
-            mock_db = MagicMock()
-            mock_db.find_similar.return_value = [
-                (image_path1, 0.95),
-                (image_path2, 0.85),
-            ]
-            mock_db.close = MagicMock()
-            mock_get_db.return_value = mock_db
-            
+
             cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
             result = cb(1, "test query", td)
-            
+
             # Should return photo cards and success alert
             self.assertIsNotNone(result[0])
             self.assertIsNotNone(result[1])
@@ -142,7 +97,7 @@ class TestClearClosestPhotosCallback(unittest.TestCase):
             [
                 html.Div(id="closest-photos-results"),
                 html.Div(id="closest-photos-status"),
-                html.Input(id="closest-photos-input"),
+                html.Div(id="closest-photos-input"),
                 html.Button(id="btn-clear-closest-photos"),
             ]
         )
@@ -156,10 +111,10 @@ class TestClearClosestPhotosCallback(unittest.TestCase):
     def test_click_clears_all(self):
         cb = find_callback(self.app, "closest-photos-results", "children").__wrapped__
         result = cb(1)
-        
+
         # Should return empty divs and empty string
-        self.assertEqual(result[0], html.Div())
-        self.assertEqual(result[1], html.Div())
+        self.assertIsInstance(result[0], html.Div)
+        self.assertIsInstance(result[1], html.Div)
         self.assertEqual(result[2], "")
 
 

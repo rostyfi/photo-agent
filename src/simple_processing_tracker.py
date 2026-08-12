@@ -1,5 +1,5 @@
 """
-Simple Processing Tracker for Open Photo Agent.
+Simple Processing Tracker for Local Photo Agent.
 
 This module provides a simple database-based approach to track which images
 have been processed, replacing the complex WAL system.
@@ -54,7 +54,7 @@ class SimpleProcessingTracker:
 
     def _get_db_path(self) -> Path:
         """Get the database path for this folder."""
-        return self.folder / ".open-photo-agent" / "features.db"
+        return self.folder / ".local-photo-agent" / "features.db"
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a cached connection or create a new one."""

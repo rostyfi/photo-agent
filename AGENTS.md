@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Open Photo Agent** is a lightweight Python application for extracting structured features, descriptions, and metadata from photos using Ollama vision models over a local network.
+**Local Photo Agent** is a lightweight Python application for extracting structured features, descriptions, and metadata from photos using Ollama vision models over a local network.
 
 It provides:
 - A CLI tool (`main.py`) for single-image, multi-image, and recursive folder processing with simple database-based resume support.
@@ -119,10 +119,10 @@ It provides:
 - `cancel_job(job_id)` / `is_job_cancelled(job_id)` / `clear_job_cancel(job_id)`: Per-job cancellation scoped to background threads
 
 ### Batch State Module (`src/batch_state.py`)
-- Atomic read/write of batch progress to `<folder>/.open-photo-agent/`
+- Atomic read/write of batch progress to `<folder>/.local-photo-agent/`
 - `write_batch_state(folder, status, total, completed, **extra)`: Atomic write of batch progress JSON
 - `read_batch_state(folder)` / `clear_batch_state(folder)`: Read and clear batch state
-- State files are stored at `<folder>/.open-photo-agent/batch_state.json`
+- State files are stored at `<folder>/.local-photo-agent/batch_state.json`
 
 ### Utils Module (`src/utils.py`)
 - `encode_image_file(image_path) -> str`: Reads image bytes via the plugin system, returns base64-encoded string
@@ -289,7 +289,7 @@ It provides:
 - **`src.config.AppConfig`**
   - Master `@dataclass` with fields: `llm_host`, `llm_port`, `llm_model`, `llm_backend`, `dash_host`, `dash_port`, `dash_debug`, `timeout`, `default_prompt`, plus embedding configuration.
   - Embedding fields: `embedding_enabled`, `embedding_model`, `embedding_backend`, `similarity_limit`, `similarity_metric`.
-  - `from_env()` classmethod loads `.env`, reads vars with `OPEN_PHOTO_AGENT_` prefix, falls back to legacy `OPEN_PHOTO_AGENT_OLLAMA_*` names with deprecation warnings.
+  - `from_env()` classmethod loads `.env`, reads vars with `LOCAL_PHOTO_AGENT_` prefix, falls back to legacy `LOCAL_PHOTO_AGENT_OLLAMA_*` names with deprecation warnings.
   - `validate()` raises `ValueError` on bad ports / hosts / timeouts.
   - `to_processing_config()` returns a `ProcessingConfig` snapshot.
 
@@ -325,7 +325,7 @@ It provides:
   - Wrap the SequentialProcessor for convenience
 
 - **`src.sidecar.database.FeaturesDatabase`**
-  - SQLite features database stored at `<folder>/.open-photo-agent/features.db`.
+  - SQLite features database stored at `<folder>/.local-photo-agent/features.db`.
   - `raw_features` table stores the full JSON result blob (unchanged).
   - `extracted_features` normalised table with columns `description`, `subjects`, `objects`, `colors`, `setting`, `mood`, `tags` (all `TEXT`).
   - `feature_tags` normalised 1:N tag table with index on `tag`.
@@ -469,22 +469,22 @@ Environment variables (see `.env.example`):
 
 | Variable | Default | Description |
 |---------|---------|-------------|
-| `OPEN_PHOTO_AGENT_LLM_HOST` | `192.168.0.150` | LLM server hostname or IP |
-| `OPEN_PHOTO_AGENT_LLM_PORT` | `11434` | LLM server port |
-| `OPEN_PHOTO_AGENT_LLM_MODEL` | `gemma4:e2b-it-qat` | Vision model tag |
-| `OPEN_PHOTO_AGENT_LLM_BACKEND` | `ollama` | LLM backend name (`ollama` or `dry_run`) |
-| `OPEN_PHOTO_AGENT_LLM_TIMEOUT` | `600` | Request timeout in seconds |
-| `OPEN_PHOTO_AGENT_DASH_HOST` | `127.0.0.1` | Web app bind address (`0.0.0.0` in Docker) |
-| `OPEN_PHOTO_AGENT_DASH_PORT` | `8050` | Web app port |
-| `OPEN_PHOTO_AGENT_DASH_DEBUG` | `false` | Enable Dash debug mode |
-| `OPEN_PHOTO_AGENT_DEFAULT_PROMPT` | *(built-in)* | Override the default extraction prompt |
-| `OPEN_PHOTO_AGENT_EMBEDDING_ENABLED` | `true` | Enable vector embedding generation |
-| `OPEN_PHOTO_AGENT_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model to use |
-| `OPEN_PHOTO_AGENT_EMBEDDING_BACKEND` | `ollama` | Embedding backend name |
-| `OPEN_PHOTO_AGENT_SIMILARITY_LIMIT` | `10` | Number of similar results to return |
-| `OPEN_PHOTO_AGENT_SIMILARITY_METRIC` | `cosine` | Similarity metric to use |
+| `LOCAL_PHOTO_AGENT_LLM_HOST` | `192.168.0.150` | LLM server hostname or IP |
+| `LOCAL_PHOTO_AGENT_LLM_PORT` | `11434` | LLM server port |
+| `LOCAL_PHOTO_AGENT_LLM_MODEL` | `gemma4:e2b-it-qat` | Vision model tag |
+| `LOCAL_PHOTO_AGENT_LLM_BACKEND` | `ollama` | LLM backend name (`ollama` or `dry_run`) |
+| `LOCAL_PHOTO_AGENT_LLM_TIMEOUT` | `600` | Request timeout in seconds |
+| `LOCAL_PHOTO_AGENT_DASH_HOST` | `127.0.0.1` | Web app bind address (`0.0.0.0` in Docker) |
+| `LOCAL_PHOTO_AGENT_DASH_PORT` | `8050` | Web app port |
+| `LOCAL_PHOTO_AGENT_DASH_DEBUG` | `false` | Enable Dash debug mode |
+| `LOCAL_PHOTO_AGENT_DEFAULT_PROMPT` | *(built-in)* | Override the default extraction prompt |
+| `LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED` | `true` | Enable vector embedding generation |
+| `LOCAL_PHOTO_AGENT_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model to use |
+| `LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND` | `ollama` | Embedding backend name |
+| `LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT` | `10` | Number of similar results to return |
+| `LOCAL_PHOTO_AGENT_SIMILARITY_METRIC` | `cosine` | Similarity metric to use |
 
-> **Deprecation note:** Legacy `OPEN_PHOTO_AGENT_OLLAMA_*` variables are still read as fallbacks but will emit a warning.
+> **Deprecation note:** Legacy `LOCAL_PHOTO_AGENT_OLLAMA_*` variables are still read as fallbacks but will emit a warning.
 
 ## Workflow for Agents
 
@@ -565,7 +565,7 @@ Whenever an image inside a folder is processed, the result is stored in a SQLite
 ```
 photos/
 ├── vacation.jpg
-└── .open-photo-agent/
+└── .local-photo-agent/
     ├── batch_state.json         # Batch processing progress (web UI)
     └── features.db            # SQLite database (raw + normalised data + tracking + embeddings)
 ```

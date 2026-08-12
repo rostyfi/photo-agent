@@ -1,5 +1,5 @@
 """
-Vector Search Utilities for Open Photo Agent.
+Vector Search Utilities for Local Photo Agent.
 
 This package provides vector search availability checking and utilities.
 

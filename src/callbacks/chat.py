@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def whoami_tool() -> str:
     """Return the agent description for the /whoami command."""
     return (
-        "I am the **Open Photo Agent**, a tool for extracting features, descriptions, "
+        "I am the **Local Photo Agent**, a tool for extracting features, descriptions, "
         "and metadata from photos using Ollama vision models over a local network. "
         "I can process images to identify subjects, objects, colors, settings, moods, and tags. "
         "I also support vector embeddings for similarity search and semantic queries."
@@ -359,7 +359,7 @@ def _history_to_messages(history: list, folder: Optional[str] = None):
             else:
                 folder_str = str(folder)
             
-            photo_components = [html.Strong(f"Photo Agent: Found {count} matching photos:")]
+            photo_components = [html.Strong(f"Local Photo Agent: Found {count} matching photos:")]
             gallery_items = []
             for photo_item in photo_paths:
                 if isinstance(photo_item, dict):
@@ -440,7 +440,7 @@ def _history_to_messages(history: list, folder: Optional[str] = None):
                 )
             )
         else:
-            display_sender = "You" if sender == "user" else ("Photo Agent" if sender == "assistant" else sender.capitalize())
+            display_sender = "You" if sender == "user" else ("Local Photo Agent" if sender == "assistant" else sender.capitalize())
             model_info = entry.get("model", "")
             message_style = {"whiteSpace": "pre-wrap", "marginBottom": "10px"}
             

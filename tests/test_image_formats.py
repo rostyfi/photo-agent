@@ -267,22 +267,22 @@ class TestHeicQualityFromEnv(unittest.TestCase):
         from plugins.formats.heic.converter import _env_quality
         self.assertEqual(_env_quality(), 95)
 
-    @patch.dict(os.environ, {"OPEN_PHOTO_AGENT_HEIC_JPEG_QUALITY": "80"}, clear=True)
+    @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "80"}, clear=True)
     def test_custom_quality(self):
         from plugins.formats.heic.converter import _env_quality
         self.assertEqual(_env_quality(), 80)
 
-    @patch.dict(os.environ, {"OPEN_PHOTO_AGENT_HEIC_JPEG_QUALITY": "not_a_number"}, clear=True)
+    @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "not_a_number"}, clear=True)
     def test_invalid_quality_falls_back(self):
         from plugins.formats.heic.converter import _env_quality
         self.assertEqual(_env_quality(), 95)
 
-    @patch.dict(os.environ, {"OPEN_PHOTO_AGENT_HEIC_JPEG_QUALITY": "0"}, clear=True)
+    @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "0"}, clear=True)
     def test_quality_below_1_clamped(self):
         from plugins.formats.heic.converter import _env_quality
         self.assertEqual(_env_quality(), 1)
 
-    @patch.dict(os.environ, {"OPEN_PHOTO_AGENT_HEIC_JPEG_QUALITY": "150"}, clear=True)
+    @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "150"}, clear=True)
     def test_quality_above_100_clamped(self):
         from plugins.formats.heic.converter import _env_quality
         self.assertEqual(_env_quality(), 100)

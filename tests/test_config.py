@@ -140,15 +140,15 @@ class TestProcessingConfig(unittest.TestCase):
 
     def test_from_env_llm_vars_take_precedence(self):
         env = {
-            "OPEN_PHOTO_AGENT_LLM_PORT": "1234",
-            "OPEN_PHOTO_AGENT_OLLAMA_PORT": "5678",
+            "LOCAL_PHOTO_AGENT_LLM_PORT": "1234",
+            "LOCAL_PHOTO_AGENT_OLLAMA_PORT": "5678",
         }
         with patch.dict(os.environ, env, clear=True):
             cfg = ProcessingConfig.from_env()
             self.assertEqual(cfg.port, 1234)
 
     def test_from_env_invalid_port_falls_back(self):
-        env = {"OPEN_PHOTO_AGENT_LLM_PORT": "INVALID"}
+        env = {"LOCAL_PHOTO_AGENT_LLM_PORT": "INVALID"}
         with patch.dict(os.environ, env, clear=True):
             cfg = ProcessingConfig.from_env()
             self.assertEqual(cfg.port, 11434)
@@ -195,7 +195,7 @@ class TestAppConfig(unittest.TestCase):
     def test_dash_debug_false_values(self):
         for val in ("0", "false", "no", ""):
             with self.subTest(value=val):
-                env = {"OPEN_PHOTO_AGENT_DASH_DEBUG": val}
+                env = {"LOCAL_PHOTO_AGENT_DASH_DEBUG": val}
                 with patch.dict(os.environ, env, clear=True):
                     cfg = AppConfig.from_env()
                     self.assertFalse(cfg.dash_debug)

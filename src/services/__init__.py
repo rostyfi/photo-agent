@@ -1,4 +1,4 @@
-"""Services package for Open Photo Agent.
+"""Services package for Local Photo Agent.
 
 This package contains service classes that encapsulate business logic,
 providing clean separation of concerns and improved testability.

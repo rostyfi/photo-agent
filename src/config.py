@@ -42,11 +42,11 @@ def _safe_int_or(env_name1: str, env_name2: str, fallback: int) -> int:
 
 def _warn_deprecated(new_name: str, old_base: str):
     for suffix in ("_HOST", "_PORT", "_MODEL", "_TIMEOUT"):
-        old_var = f"OPEN_PHOTO_AGENT_{old_base}{suffix}"
+        old_var = f"LOCAL_PHOTO_AGENT_{old_base}{suffix}"
         if os.getenv(old_var) is not None:
             logger.warning(
                 "Environment variable %s is deprecated, use %s instead",
-                old_var, f"OPEN_PHOTO_AGENT_{new_name}{suffix}",
+                old_var, f"LOCAL_PHOTO_AGENT_{new_name}{suffix}",
             )
 
 
@@ -107,30 +107,30 @@ class ProcessingConfig:
     def from_env(cls) -> "ProcessingConfig":
         """Load configuration from environment variables (with .env support).
 
-        Prefers ``OPEN_PHOTO_AGENT_LLM_*`` variables, falling back to
-        ``OPEN_PHOTO_AGENT_OLLAMA_*`` for backward compatibility.
+        Prefers ``LOCAL_PHOTO_AGENT_LLM_*`` variables, falling back to
+        ``LOCAL_PHOTO_AGENT_OLLAMA_*`` for backward compatibility.
         
         Embedding configuration uses:
-        - OPEN_PHOTO_AGENT_EMBEDDING_ENABLED
-        - OPEN_PHOTO_AGENT_EMBEDDING_MODEL
-        - OPEN_PHOTO_AGENT_EMBEDDING_BACKEND
-        - OPEN_PHOTO_AGENT_SIMILARITY_LIMIT
-        - OPEN_PHOTO_AGENT_SIMILARITY_METRIC
+        - LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED
+        - LOCAL_PHOTO_AGENT_EMBEDDING_MODEL
+        - LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND
+        - LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT
+        - LOCAL_PHOTO_AGENT_SIMILARITY_METRIC
         """
         load_dotenv()
         _warn_deprecated("LLM", "OLLAMA")
         return cls(
-            backend=os.getenv("OPEN_PHOTO_AGENT_LLM_BACKEND", "ollama"),
-            host=os.getenv("OPEN_PHOTO_AGENT_LLM_HOST") or os.getenv("OPEN_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
-            port=_safe_int_or("OPEN_PHOTO_AGENT_LLM_PORT", "OPEN_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            model=os.getenv("OPEN_PHOTO_AGENT_LLM_MODEL") or os.getenv("OPEN_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
-            timeout=_safe_int_or("OPEN_PHOTO_AGENT_LLM_TIMEOUT", "OPEN_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
-            default_prompt=os.getenv("OPEN_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
-            embedding_enabled=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
-            embedding_model=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
-            embedding_backend=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
-            similarity_limit=_safe_int("OPEN_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
-            similarity_metric=os.getenv("OPEN_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
+            backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
+            host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
+            model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
+            default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
+            embedding_enabled=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
+            embedding_model=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
+            embedding_backend=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
+            similarity_limit=_safe_int("LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
+            similarity_metric=os.getenv("LOCAL_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
         )
 
     def validate(self):
@@ -138,9 +138,9 @@ class ProcessingConfig:
 
         Raises ValueError with a clear message on invalid configuration.
         """
-        _validate_host("OPEN_PHOTO_AGENT_LLM_HOST", self.host, "LLM host")
-        _validate_port_range("OPEN_PHOTO_AGENT_LLM_PORT", self.port, "LLM port")
-        _validate_positive("OPEN_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
+        _validate_host("LOCAL_PHOTO_AGENT_LLM_HOST", self.host, "LLM host")
+        _validate_port_range("LOCAL_PHOTO_AGENT_LLM_PORT", self.port, "LLM port")
+        _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
         
         # Validate embedding configuration
         if self.similarity_limit <= 0:
@@ -157,7 +157,7 @@ class AppConfig:
 
     Holds LLM connection details, Dash server settings, default prompt, and
     processing tracker settings.  All values can be overridden
-    via environment variables with the ``OPEN_PHOTO_AGENT_`` prefix.
+    via environment variables with the ``LOCAL_PHOTO_AGENT_`` prefix.
     
     Embedding configuration:
     - embedding_enabled: Generate vector embeddings (default: True)
@@ -196,15 +196,15 @@ class AppConfig:
         """Load application configuration from environment variables.
 
         Reads ``.env`` via python-dotenv, then respects both the newer
-        ``OPEN_PHOTO_AGENT_LLM_*`` and legacy ``OPEN_PHOTO_AGENT_OLLAMA_*``
+        ``LOCAL_PHOTO_AGENT_LLM_*`` and legacy ``LOCAL_PHOTO_AGENT_OLLAMA_*``
         variable families.
         
         Embedding configuration uses:
-        - OPEN_PHOTO_AGENT_EMBEDDING_ENABLED
-        - OPEN_PHOTO_AGENT_EMBEDDING_MODEL
-        - OPEN_PHOTO_AGENT_EMBEDDING_BACKEND
-        - OPEN_PHOTO_AGENT_SIMILARITY_LIMIT
-        - OPEN_PHOTO_AGENT_SIMILARITY_METRIC
+        - LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED
+        - LOCAL_PHOTO_AGENT_EMBEDDING_MODEL
+        - LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND
+        - LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT
+        - LOCAL_PHOTO_AGENT_SIMILARITY_METRIC
         
         Requirements:
         - Vector search library (HARD REQUIREMENT) for vector search
@@ -213,23 +213,23 @@ class AppConfig:
         load_dotenv()
         _warn_deprecated("LLM", "OLLAMA")
         return cls(
-            llm_host=os.getenv("OPEN_PHOTO_AGENT_LLM_HOST") or os.getenv("OPEN_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
-            llm_port=_safe_int_or("OPEN_PHOTO_AGENT_LLM_PORT", "OPEN_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            llm_model=os.getenv("OPEN_PHOTO_AGENT_LLM_MODEL") or os.getenv("OPEN_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
-            llm_backend=os.getenv("OPEN_PHOTO_AGENT_LLM_BACKEND", "ollama"),
-            dash_host=os.getenv("OPEN_PHOTO_AGENT_DASH_HOST", "127.0.0.1"),
-            dash_port=_safe_int("OPEN_PHOTO_AGENT_DASH_PORT", 8050),
-            dash_debug=os.getenv("OPEN_PHOTO_AGENT_DASH_DEBUG", "false").lower() in ("1", "true", "yes"),
-            timeout=_safe_int_or("OPEN_PHOTO_AGENT_LLM_TIMEOUT", "OPEN_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
-            default_prompt=os.getenv("OPEN_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
-            folder_path=os.getenv("OPEN_PHOTO_AGENT_FOLDER", "/photos"),
-            recursive=os.getenv("OPEN_PHOTO_AGENT_RECURSIVE", "true").lower() in ("1", "true", "yes"),
-            dry_run=os.getenv("OPEN_PHOTO_AGENT_DRY_RUN", "false").lower() in ("1", "true", "yes"),
-            embedding_enabled=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
-            embedding_model=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
-            embedding_backend=os.getenv("OPEN_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
-            similarity_limit=_safe_int("OPEN_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
-            similarity_metric=os.getenv("OPEN_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
+            llm_host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            llm_port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
+            llm_model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            llm_backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
+            dash_host=os.getenv("LOCAL_PHOTO_AGENT_DASH_HOST", "127.0.0.1"),
+            dash_port=_safe_int("LOCAL_PHOTO_AGENT_DASH_PORT", 8050),
+            dash_debug=os.getenv("LOCAL_PHOTO_AGENT_DASH_DEBUG", "false").lower() in ("1", "true", "yes"),
+            timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
+            default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
+            folder_path=os.getenv("LOCAL_PHOTO_AGENT_FOLDER", "/photos"),
+            recursive=os.getenv("LOCAL_PHOTO_AGENT_RECURSIVE", "true").lower() in ("1", "true", "yes"),
+            dry_run=os.getenv("LOCAL_PHOTO_AGENT_DRY_RUN", "false").lower() in ("1", "true", "yes"),
+            embedding_enabled=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
+            embedding_model=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
+            embedding_backend=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
+            similarity_limit=_safe_int("LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
+            similarity_metric=os.getenv("LOCAL_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
         )
 
     def validate(self):
@@ -237,11 +237,11 @@ class AppConfig:
 
         Raises ValueError with a clear message on invalid configuration.
         """
-        _validate_host("OPEN_PHOTO_AGENT_LLM_HOST", self.llm_host, "LLM host")
-        _validate_port_range("OPEN_PHOTO_AGENT_LLM_PORT", self.llm_port, "LLM port")
-        _validate_positive("OPEN_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
-        _validate_host("OPEN_PHOTO_AGENT_DASH_HOST", self.dash_host, "Dash host")
-        _validate_port_range("OPEN_PHOTO_AGENT_DASH_PORT", self.dash_port, "Dash port")
+        _validate_host("LOCAL_PHOTO_AGENT_LLM_HOST", self.llm_host, "LLM host")
+        _validate_port_range("LOCAL_PHOTO_AGENT_LLM_PORT", self.llm_port, "LLM port")
+        _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
+        _validate_host("LOCAL_PHOTO_AGENT_DASH_HOST", self.dash_host, "Dash host")
+        _validate_port_range("LOCAL_PHOTO_AGENT_DASH_PORT", self.dash_port, "Dash port")
         
         # Validate embedding configuration
         if self.similarity_limit <= 0:

@@ -120,7 +120,8 @@ class TestTagToggleCallback(unittest.TestCase):
 
     def test_no_trigger_returns_no_update(self):
         cb = find_callback(self.app, "selected-tags-store", "data").__wrapped__
-        result = cb(None, None, None, [], [], [], "")
+        with patch_callback_context(_tags, []):
+            result = cb(None, None, None, [], [], [], "")
         self.assertEqual(result, (dash.no_update, dash.no_update, dash.no_update))
 
 

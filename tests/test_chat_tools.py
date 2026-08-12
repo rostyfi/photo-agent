@@ -368,7 +368,7 @@ class TestAboutTool:
         result = tool.execute()
         
         assert result.status == "success"
-        assert "Open Photo Agent" in result.response
+        assert "Local Photo Agent" in result.response
         assert result.sender == "assistant"
         assert result.model == "N/A"
     
@@ -600,7 +600,7 @@ class TestChatService:
         prompt = service.get_system_prompt()
         
         # Check that prompt contains expected sections
-        assert "Open Photo Agent" in prompt
+        assert "Local Photo Agent" in prompt
         assert "RULE 1" in prompt
         assert "RULE 2" in prompt
         assert "AVAILABLE TOOL COMMANDS" in prompt
@@ -627,7 +627,7 @@ class TestChatService:
         result = service.handle_tool_command("/about", folder_path=None)
         
         assert result.status == "success"
-        assert "Open Photo Agent" in result.response
+        assert "Local Photo Agent" in result.response
     
     def test_chat_service_handle_unknown_command(self):
         """Test handling unknown command."""

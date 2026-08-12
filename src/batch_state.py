@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _state_path(folder: str) -> Path:
-    return Path(folder) / ".open-photo-agent" / "batch_state.json"
+    return Path(folder) / ".local-photo-agent" / "batch_state.json"
 
 
 def write_batch_state(folder: str, status: str, total: int, completed: int, **extra) -> None:

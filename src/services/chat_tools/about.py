@@ -30,7 +30,7 @@ class AboutTool(BaseTool):
         return ChatResponse(
             status="success",
             response=(
-                "I am the **Open Photo Agent**, a chat assistant for a photo feature extraction system. "
+                "I am the **Local Photo Agent**, a chat assistant for a photo feature extraction system. "
                 "I have access to specific tools for querying photo databases. "
                 "Use `/tools` to see available commands."
             ),

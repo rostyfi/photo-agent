@@ -99,7 +99,7 @@ class TestInitDb:
 
     def test_default_db_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            expected = Path(tmpdir) / ".open-photo-agent" / "features.db"
+            expected = Path(tmpdir) / ".local-photo-agent" / "features.db"
             assert FeaturesDatabase.default_db_path(tmpdir) == expected
 
     def test_creates_parent_directories(self):

@@ -17,6 +17,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback_context, html
 
 from src.config import AppConfig
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.vector_search.availability import is_vector_search_available
 from plugins.llm import create_extractor
 
@@ -31,10 +32,10 @@ def _get_extractor(host, port, model, backend, timeout, default_prompt):
     """Create and return an extractor with the given parameters."""
     return create_extractor(
         backend=backend or "ollama",
-        host=host or "192.168.0.150",
-        port=int(port) if port else 11434,
+        host=host or DEFAULT_LLM_HOST,
+        port=int(port) if port else DEFAULT_LLM_PORT,
         model=model,
-        timeout=int(timeout) if timeout else 120,
+        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
         default_prompt=default_prompt,
     )
 
