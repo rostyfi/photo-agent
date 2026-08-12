@@ -41,7 +41,7 @@ def write_batch_state(folder: str, status: str, total: int, completed: int, **ex
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(state), encoding="utf-8")
     tmp.replace(p)
-    logger.debug(f"Batch state: {status} {completed}/{total}")
+    logger.debug("Batch state: %s %s/%s", status, completed, total)
 
 
 def read_batch_state(folder: str) -> Optional[Dict]:
@@ -63,4 +63,4 @@ def clear_batch_state(folder: str) -> None:
     p = _state_path(folder)
     if p.exists():
         p.unlink()
-        logger.debug(f"Cleared batch state for {folder}")
+        logger.debug("Cleared batch state for %s", folder)

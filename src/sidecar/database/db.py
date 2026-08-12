@@ -497,11 +497,11 @@ class FeaturesDatabase:
         dim = VEC_TABLE_DIMENSION
         if len(vector) < dim:
             padded = vector + [0.0] * (dim - len(vector))
-            logger.warning(f"Padding vector from {len(vector)} to {dim} dimensions")
+            logger.warning("Padding vector from %s to %s dimensions", len(vector), dim)
             return padded
         if len(vector) > dim:
             truncated = vector[:dim]
-            logger.warning(f"Truncating vector from {len(vector)} to {dim} dimensions")
+            logger.warning("Truncating vector from %s to %s dimensions", len(vector), dim)
             return truncated
         return vector
     
@@ -551,7 +551,7 @@ class FeaturesDatabase:
             conn.commit()
             return True
         except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
-            logger.warning(f"Failed to save to vec_embeddings for %s: %s", image_path, e)
+            logger.warning("Failed to save to vec_embeddings for %s: %s", image_path, e)
             return False
     
     def delete_from_vec_table(
@@ -567,7 +567,7 @@ class FeaturesDatabase:
             conn.commit()
             return True
         except sqlite3.OperationalError as e:
-            logger.error(f"Failed to delete from vec_embeddings for %s: %s", image_path, e)
+            logger.error("Failed to delete from vec_embeddings for %s: %s", image_path, e)
             return False
     
     def get_from_vec_table(
@@ -588,7 +588,7 @@ class FeaturesDatabase:
                 return self.blob_to_vector(blob, dimension)
             return None
         except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
-            logger.error(f"Failed to get embedding from vec_embeddings for %s: %s", image_path, e)
+            logger.error("Failed to get embedding from vec_embeddings for %s: %s", image_path, e)
             return None
     
     def vec_find_similar(
@@ -1207,7 +1207,7 @@ class FeaturesDatabase:
                     # sqlite-vec library not available or vec_embeddings table doesn't exist
                     # but we still saved metadata to image_embeddings table
                     logger.warning(
-                        f"Failed to save to {TABLE_VEC_EMBEDDINGS} for %s: %s. Metadata saved to image_embeddings.",
+                        "Failed to save to %s for %s: %s. Metadata saved to image_embeddings.", TABLE_VEC_EMBEDDINGS,
                         image_path, e
                     )
                     # Don't re-raise - metadata was already saved successfully
@@ -1339,7 +1339,7 @@ class FeaturesDatabase:
                         vector = self.blob_to_vector(blob, dimension)
                         results.append((image_path, vector))
                     except (ValueError, struct.error) as e:
-                        logger.warning(f"Failed to decode embedding for {image_path}: {e}")
+                        logger.warning("Failed to decode embedding for %s: %s", image_path, e)
                         continue
 
             return results
@@ -1376,7 +1376,7 @@ class FeaturesDatabase:
         except RuntimeError:
             # Vector search library not available, return empty results
             from src.constants import VEC_NOT_AVAILABLE
-            logger.warning(f"{VEC_NOT_AVAILABLE}. Returning empty results.")
+            logger.warning("%s. Returning empty results.", VEC_NOT_AVAILABLE)
             return []
 
         with self.get_connection() as conn:
@@ -1432,8 +1432,7 @@ class FeaturesDatabase:
                 # Ensure vectors are the same dimension
                 if len(vector) != len(query_vector):
                     logger.warning(
-                        f"Dimension mismatch for {image_path}: "
-                        f"query={len(query_vector)}, stored={len(vector)}"
+                        "Dimension mismatch for %s: query=%s, stored=%s", image_path, len(query_vector), len(vector)
                     )
                     # Pad or truncate to match
                     min_dim = min(len(query_vector), len(vector))
@@ -1445,7 +1444,7 @@ class FeaturesDatabase:
                 
                 results.append((image_path, similarity))
             except Exception as e:
-                logger.error(f"Failed to compute similarity for {image_path}: {e}")
+                logger.error("Failed to compute similarity for %s: %s", image_path, e)
                 continue
         
         # Sort by similarity (descending) and take top-k

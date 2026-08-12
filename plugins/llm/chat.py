@@ -51,7 +51,7 @@ class OllamaChatClient(LLMChatClient):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self._session = self._create_session()
-        logger.info(f"Initialized Ollama chat client for {self.base_url} using model '{self.model}'")
+        logger.info("Initialized Ollama chat client for %s using model '%s'", self.base_url, self.model)
 
     def _create_session(self) -> requests.Session:
         """Build a requests Session with automatic retries on transient failures."""
@@ -122,11 +122,18 @@ class OllamaChatClient(LLMChatClient):
         if system_prompt:
             payload["system"] = system_prompt
         
-        logger.debug(f"Sending chat request to {url} with model '{self.model}'")
+        logger.debug("Sending chat request to %s with model '%s'", url, self.model)
         
         response = self._session.post(url, json=payload, timeout=self.timeout)
         response.raise_for_status()
-        result = response.json()
+        try:
+            result = response.json()
+        except ValueError as e:
+            logger.error("Ollama chat returned non-JSON response (status %d): %s", response.status_code, response.text[:200])
+            raise RuntimeError(
+                f"Ollama chat response was not valid JSON (status {response.status_code}). "
+                f"Model: {self.model}. Response: {response.text[:200]}"
+            ) from e
         
         return result.get("response", "")
 
@@ -139,5 +146,5 @@ class OllamaChatClient(LLMChatClient):
             logger.info("Ollama server is reachable")
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"Health check failed: {e}")
+            logger.error("Health check failed: %s", e)
             return False

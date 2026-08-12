@@ -78,6 +78,8 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.base_url = f"http://{self.host}:{self.port}"
+        # Reuse a single session for connection pooling across bulk requests
+        self._session = requests.Session()
         
         # Verify Ollama version requirement
         version_str = self._check_ollama_version()
@@ -109,7 +111,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         """Check the Ollama server version via /api/version endpoint."""
         try:
             url = f"{self.base_url}/api/version"
-            response = requests.get(url, timeout=10)
+            response = self._session.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 version = data.get("version", "")
@@ -209,12 +211,12 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
-                response = requests.post(
+                response = self._session.post(
                     url,
                     json=payload,
                     timeout=self.timeout,
                 )
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     # Handle both singular and plural forms
@@ -222,30 +224,27 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                     # Multi-image requests return {"embeddings": [[floats], [floats], ...]}
                     embeddings_list = data.get("embeddings")
                     embedding_single = data.get("embedding")
-                    
+
                     if embeddings_list is not None:
                         # This is the multi-image format: {"embeddings": [[...], [...]]}
                         if len(embeddings_list) > 0 and len(embeddings_list[0]) > 0:
                             return embeddings_list[0]
-                        elif len(embeddings_list) == 0:
-                            # Empty list of embeddings
-                            last_error = RuntimeError(
-                                f"Empty embeddings list in response from Ollama for model '{use_model}'. "
-                                f"Response: {data}. "
-                                f"Vector search library is a HARD REQUIREMENT for vector search. "
-                                f"Check that the model '{use_model}' supports embedding generation."
-                            )
-                            logger.error(
-                                "Empty embeddings list in response from Ollama for model '%s': %s",
-                                use_model, data
-                            )
-                            continue
+                        # Empty list of embeddings
+                        last_error = RuntimeError(
+                            f"Empty embeddings list in response from Ollama for model '{use_model}'. "
+                            f"Response: {data}. "
+                            f"Vector search library is a HARD REQUIREMENT for vector search. "
+                            f"Check that the model '{use_model}' supports embedding generation."
+                        )
+                        logger.error(
+                            "Empty embeddings list in response from Ollama for model '%s': %s",
+                            use_model, data
+                        )
                     elif embedding_single is not None:
                         # This is the single embedding format: {"embedding": [floats]}
                         if isinstance(embedding_single, list) and len(embedding_single) > 0:
                             return embedding_single
-                        elif isinstance(embedding_single, list) and len(embedding_single) == 0:
-                            last_error = RuntimeError(
+                        last_error = RuntimeError(
                             f"Empty embeddings in response from Ollama for model '{use_model}'. "
                             f"Response: {data}. "
                             f"Vector search library is a HARD REQUIREMENT for vector search. "
@@ -269,7 +268,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                             "No embeddings in response from Ollama for model '%s': %s",
                             use_model, data
                         )
-                        
+
                 elif response.status_code == 404:
                     # Endpoint not found - Ollama version too old
                     last_error = RuntimeError(
@@ -283,7 +282,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                         "Requires Ollama v%s+",
                         MIN_OLLAMA_VERSION
                     )
-                    
+
                 else:
                     last_error = RuntimeError(
                         f"Ollama embeddings request failed with status {response.status_code}. "
@@ -296,7 +295,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                         response.status_code,
                         response.text[:200]
                     )
-                    
+
             except requests.exceptions.Timeout as e:
                 last_error = RuntimeError(
                     f"Timeout on embedding request after {self.max_retries + 1} attempts. "
@@ -308,10 +307,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                     "Timeout on embedding request (attempt %d/%d)",
                     attempt + 1, self.max_retries + 1
                 )
-                if attempt < self.max_retries:
-                    time.sleep(self.backoff_factor * (2 ** attempt))
-                    continue
-                    
+
             except requests.exceptions.RequestException as e:
                 last_error = RuntimeError(
                     f"Network error on embedding request after {self.max_retries + 1} attempts. "
@@ -323,10 +319,15 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                     "Network error on embedding request (attempt %d/%d): %s",
                     attempt + 1, self.max_retries + 1, e
                 )
-                if attempt < self.max_retries:
-                    time.sleep(self.backoff_factor * (2 ** attempt))
-                    continue
-        
+
+            # Sleep before retrying. This single backoff point covers every
+            # non-success branch above, preventing a busy retry loop that
+            # hammers the server when embeddings are empty or the endpoint
+            # returns a non-200 status.
+            if attempt < self.max_retries:
+                time.sleep(self.backoff_factor * (2 ** attempt))
+                continue
+
         raise last_error or RuntimeError(
             f"Failed to generate embedding for model '{use_model}' at {url}. "
             f"Vector search library is a HARD REQUIREMENT for vector search."
@@ -419,7 +420,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         try:
             # First check if server is running
             url = f"{self.base_url}/api/tags"
-            response = requests.get(url, timeout=10)
+            response = self._session.get(url, timeout=10)
             if response.status_code != 200:
                 return False
             
@@ -434,14 +435,14 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             try:
                 if is_text_model:
                     # For text models, use a test prompt
-                    response = requests.post(
+                    response = self._session.post(
                         url,
                         json={"model": self.model, "prompt": "test"},
                         timeout=10,
                     )
                 else:
                     # For vision models, use a test image (empty base64 or placeholder)
-                    response = requests.post(
+                    response = self._session.post(
                         url,
                         json={"model": self.model, "images": [""]},
                         timeout=10,
@@ -471,7 +472,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         """
         try:
             url = f"{self.base_url}/api/tags"
-            response = requests.get(url, timeout=10)
+            response = self._session.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 models = data.get("models", [])

@@ -47,7 +47,7 @@ class CountTool(BaseTool):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error counting photos: {e}")
+            logger.error("Error counting photos: %s", e)
             return ChatResponse(
                 status="error",
                 response=f"Failed to count photos: {str(e)}",

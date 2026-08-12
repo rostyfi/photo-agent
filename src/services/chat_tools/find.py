@@ -107,7 +107,7 @@ class FindTool(BaseTool):
             import logging
             import traceback
             logger = logging.getLogger(__name__)
-            logger.error(f"Error finding photos: {e}")
+            logger.error("Error finding photos: %s", e)
             logger.error(traceback.format_exc())
             return ChatResponse(
                 status="error",

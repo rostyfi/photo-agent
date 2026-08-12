@@ -54,7 +54,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self._session = self._create_session()
-        logger.info(f"Initialized Ollama extractor for {self.base_url} using model '{self.model}'")
+        logger.info("Initialized Ollama extractor for %s using model '%s'", self.base_url, self.model)
 
     def _create_session(self) -> requests.Session:
         """Build a requests Session with automatic retries on transient failures."""
@@ -125,7 +125,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
         url = f"{self.base_url}/api/generate"
 
         try:
-            logger.info(f"Sending image to Ollama at {url} (model: {self.model})")
+            logger.info("Sending image to Ollama at %s (model: %s)", url, self.model)
             response = self._session.post(url, json=payload, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
@@ -211,14 +211,14 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
             return result
 
         except requests.exceptions.Timeout as e:
-            logger.error(f"Request timed out: {e}")
+            logger.error("Request timed out: %s", e)
             return ProcessingResult(
                 success=False,
                 error_code=ErrorCode.TIMEOUT.value,
                 error=str(e),
             )
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed: {e}")
+            logger.error("Request failed: %s", e)
             return ProcessingResult(
                 success=False,
                 error_code=ErrorCode.NETWORK_ERROR.value,
@@ -249,5 +249,5 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
             logger.info("Ollama server is reachable")
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"Health check failed: {e}")
+            logger.error("Health check failed: %s", e)
             return False

@@ -6,7 +6,7 @@ from dash import Input, Output, State, callback_context
 
 from src.components import build_detail_modal_content
 
-from .common import _db_session, _open_fullscreen_content, _open_modal
+from .common import _db_session, _get_app_config, _open_fullscreen_content, _open_modal
 
 logger = logging.getLogger(__name__)
 
@@ -193,8 +193,7 @@ def register_fullscreen_close_callback(app):
                         metadata = db.get_feature_summary(image_path)
                         # Try to get embedding vector
                         try:
-                            from src.config import AppConfig
-                            config = AppConfig.from_env()
+                            config = _get_app_config()
                             embedding = db.get_embedding(image_path, config.embedding_model)
                         except RuntimeError as e:
                             # Vector search library not available - don't truncate this important error
@@ -265,8 +264,7 @@ def register_fullscreen_find_similar_callback(app):
         
         try:
             # Get config
-            from src.config import AppConfig
-            config = AppConfig.from_env()
+            config = _get_app_config()
             
             # Check if database exists
             from src.sidecar.database.db import FeaturesDatabase
@@ -301,7 +299,7 @@ def register_fullscreen_find_similar_callback(app):
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("message", error_msg)
-                    except:
+                    except (ValueError, KeyError):
                         error_msg = f"{error_msg}: {response.text[:200]}"
                     
                     logger.error("REST vector search API error: %s", error_msg)

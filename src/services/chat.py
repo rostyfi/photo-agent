@@ -11,7 +11,6 @@ allowing for extensibility without modifying this file.
 
 import logging
 import re
-import traceback
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -302,15 +301,15 @@ class ChatService:
             system_prompt = self.get_system_prompt()
             
             raw_response = chat_client.chat(message, system_prompt=system_prompt, history=history)
-            logger.debug(f"[Chat LLM] Raw response: {repr(raw_response)}")
+            logger.debug("[Chat LLM] Raw response: %r", raw_response)
             
             # Clean up response
             cleaned_response = self._clean_response(raw_response)
-            logger.debug(f"[Chat LLM] Cleaned response: {repr(cleaned_response)}")
+            logger.debug("[Chat LLM] Cleaned response: %r", cleaned_response)
             
             # Check if the LLM returned a tool command
             response_stripped = cleaned_response.strip()
-            logger.debug(f"[Chat LLM] Stripped response: {repr(response_stripped)}")
+            logger.debug("[Chat LLM] Stripped response: %r", response_stripped)
             
             if response_stripped in tool_commands:
                 result = self.handle_tool_command(response_stripped, folder_path)
@@ -332,7 +331,7 @@ class ChatService:
             )
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Chat API request failed: {e}")
+            logger.error("Chat API request failed: %s", e)
             return ChatResponse(
                 status="error",
                 response=f"Failed to connect to LLM: {str(e)}",
@@ -340,8 +339,7 @@ class ChatService:
                 model=model or "unknown"
             )
         except Exception as e:
-            logger.error(f"Chat API error: {e}")
-            logger.error(traceback.format_exc())
+            logger.error("Chat API error: %s", e, exc_info=True)
             return ChatResponse(
                 status="error",
                 response=str(e),

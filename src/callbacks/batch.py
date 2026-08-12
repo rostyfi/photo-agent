@@ -20,31 +20,13 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html
 
 from src.batch_state import write_batch_state, read_batch_state, clear_batch_state
-from src.config import ProcessingConfig
-from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.file_processing import ProcessableFileLister
 from src.sequential_processor import SequentialProcessor
 from src.state import reset_shutdown_event, request_shutdown
 from plugins.llm import create_extractor
+from .common import _make_processing_config
 
 logger = logging.getLogger(__name__)
-
-
-def _make_processing_config(host, port, model, backend, timeout, default_prompt, dry_run=False, embedding_enabled=True, embedding_model=None, embedding_backend=None):
-    """Build a ProcessingConfig from form values."""
-    return ProcessingConfig(
-        backend="dry_run" if dry_run else (backend or "ollama"),
-        host=host or DEFAULT_LLM_HOST,
-        port=int(port) if port else DEFAULT_LLM_PORT,
-        model=model,
-        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
-        default_prompt=default_prompt,
-        embedding_enabled=bool(embedding_enabled) if embedding_enabled is not None else True,
-        embedding_model=embedding_model or "nomic-embed-text",
-        embedding_backend=embedding_backend or "ollama",
-        similarity_limit=10,
-        similarity_metric="cosine",
-    )
 
 
 def register_process_callback(app, app_config):
@@ -96,6 +78,7 @@ def register_process_callback(app, app_config):
             pc = _make_processing_config(
                 host, port, model, backend, timeout, app_config.default_prompt,
                 dry_run=bool(dry_run),
+                app_config=app_config,
                 embedding_enabled=embedding_enabled,
                 embedding_model=embedding_model,
                 embedding_backend=embedding_backend
@@ -185,6 +168,7 @@ def register_process_all_callback(app, app_config):
             pc = _make_processing_config(
                 host, port, model, backend, timeout, app_config.default_prompt,
                 dry_run=bool(dry_run),
+                app_config=app_config,
                 embedding_enabled=embedding_enabled,
                 embedding_model=embedding_model,
                 embedding_backend=embedding_backend
@@ -255,8 +239,8 @@ def register_process_all_callback(app, app_config):
             # Try to clear the running state if we wrote it
             try:
                 clear_batch_state(folder)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to clear batch state for %s: %s", folder, e, exc_info=True)
             return f"Error: {str(e)}"
 
 
@@ -302,6 +286,7 @@ def register_reprocess_callback(app, app_config):
             pc = _make_processing_config(
                 host, port, model, backend, timeout, app_config.default_prompt,
                 dry_run=bool(dry_run),
+                app_config=app_config,
                 embedding_enabled=embedding_enabled,
                 embedding_model=embedding_model,
                 embedding_backend=embedding_backend
@@ -371,8 +356,8 @@ def register_reprocess_callback(app, app_config):
             # Try to clear the running state if we wrote it
             try:
                 clear_batch_state(folder)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to clear batch state for %s: %s", folder, e, exc_info=True)
             return f"Error: {str(e)}"
 
 

@@ -97,19 +97,19 @@ class PhotoList:
             List of absolute image file paths.
         """
         images = []
-        logger.info(f"Listing photos for paths: {paths}")
+        logger.info("Listing photos for paths: %s", paths)
         
         for p in paths:
             path = Path(p).absolute()
-            logger.info(f"Checking path: {path} (Exists: {path.exists()}, IsDir: {path.is_dir()})")
+            logger.info("Checking path: %s (Exists: %s, IsDir: %s)", path, path.exists(), path.is_dir())
             
             if path.is_dir():
                 if self.recursive:
                     candidates = list(path.rglob("*"))
-                    logger.info(f"Found {len(candidates)} total candidates in {path} (recursive)")
+                    logger.info("Found %s total candidates in %s (recursive)", len(candidates), path)
                 else:
                     candidates = list(path.iterdir())
-                    logger.info(f"Found {len(candidates)} total candidates in {path} (non-recursive)")
+                    logger.info("Found %s total candidates in %s (non-recursive)", len(candidates), path)
                 
                 for child in candidates:
                     if child.is_file() and child.suffix.lower() in self.extensions:
@@ -118,21 +118,21 @@ class PhotoList:
                 if path.suffix.lower() in self.extensions:
                     images.append(str(path))
                 else:
-                    logger.warning(f"File is not a supported image: {p}")
+                    logger.warning("File is not a supported image: %s", p)
             else:
-                logger.warning(f"Path not found: {p}")
+                logger.warning("Path not found: %s", p)
 
-        logger.info(f"Total images discovered: {len(images)}")
+        logger.info("Total images discovered: %s", len(images))
 
         if exclude_processed_from:
             processed = self._load_processed_set(exclude_processed_from)
             if processed:
                 images = [img for img in images if img not in processed]
-                logger.info(f"After excluding {len(processed)} processed: {len(images)} remaining")
+                logger.info("After excluding %s processed: %s remaining", len(processed), len(images))
 
         if limit is not None:
             images = images[:limit]
-            logger.info(f"After limiting to {limit}: {len(images)} remaining")
+            logger.info("After limiting to %s: %s remaining", limit, len(images))
 
         return images
 
@@ -156,9 +156,9 @@ class PhotoList:
         try:
             tracker = SimpleProcessingTracker(image_dir)
             processed = tracker.get_processed_files()
-            logger.debug(f"Loaded {len(processed)} processed images from simple tracker")
+            logger.debug("Loaded %s processed images from simple tracker", len(processed))
         except Exception as e:
-            logger.warning(f"Failed to read processing tracker for {image_dir}: {e}")
+            logger.warning("Failed to read processing tracker for %s: %s", image_dir, e)
             
             # Fallback: try to read from features.db directly
             db_path = FeaturesDatabase.default_db_path(image_dir)
@@ -171,7 +171,7 @@ class PhotoList:
                         ex["image_path"] for ex in extractions
                         if ex.get("image_path")
                     }
-                    logger.debug(f"Loaded {len(processed)} processed images from features.db fallback")
+                    logger.debug("Loaded %s processed images from features.db fallback", len(processed))
                 except Exception:
                     logger.warning("Failed to read features DB for %s", image_dir, exc_info=True)
 

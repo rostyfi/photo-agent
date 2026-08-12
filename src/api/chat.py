@@ -31,7 +31,7 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
     """
     try:
         data = request.get_json(silent=True)
-        logger.debug(f"Chat endpoint received: {data}")
+        logger.debug("Chat endpoint received: %s", data)
         
         if not data:
             return {"status": "error", "message": "No JSON payload provided"}, 400
@@ -43,7 +43,7 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
         folder_path = data.get("folder")
         history = data.get("history", [])
         
-        logger.debug(f"Chat endpoint: message='{message}', host={host}, port={port}, model={model}, history_len={len(history)}")
+        logger.debug("Chat endpoint: message='%s', host=%s, port=%s, model=%s, history_len=%s", message, host, port, model, len(history))
         
         if not message or not message.strip():
             return {"status": "error", "message": "Message is required"}, 400
@@ -72,7 +72,7 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
         return api_response
         
     except Exception as e:
-        logger.error(f"Chat API error: {e}", exc_info=True)
+        logger.error("Chat API error: %s", e, exc_info=True)
         return {
             "status": "error",
             "message": str(e),

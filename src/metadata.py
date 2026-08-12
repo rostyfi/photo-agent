@@ -137,7 +137,7 @@ def _convert_to_degrees(value: Any) -> Optional[float]:
         
         return degrees + (minutes / 60.0) + (seconds / 3600.0)
     except (ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
-        logger.debug(f"Error converting GPS coordinates: {e}")
+        logger.debug("Error converting GPS coordinates: %s", e)
         return None
 
 
@@ -165,7 +165,7 @@ def _get_exif_tag(exif_data: Dict, tag_id: int, tag_name: str = None) -> Optiona
             return value
         return None
     except Exception as e:
-        logger.debug(f"Error getting EXIF tag {tag_id} ({tag_name}): {e}")
+        logger.debug("Error getting EXIF tag %s (%s): %s", tag_id, tag_name, e)
         return None
 
 
@@ -243,7 +243,7 @@ def extract_metadata(image_path: str) -> ImageMetadata:
         metadata.date_modified = datetime.fromtimestamp(mod_time).isoformat()
         
     except Exception as e:
-        logger.warning(f"Error getting file info for {image_path}: {e}")
+        logger.warning("Error getting file info for %s: %s", image_path, e)
     
     try:
         # Open image with Pillow to get dimensions and EXIF
@@ -365,7 +365,7 @@ def extract_metadata(image_path: str) -> ImageMetadata:
                                     alt = -alt
                                 metadata.altitude = alt
                 except Exception as gps_error:
-                    logger.debug(f"Error extracting GPS data from {image_path}: {gps_error}")
+                    logger.debug("Error extracting GPS data from %s: %s", image_path, gps_error)
                 
                 # Try to get date created from file metadata
                 if metadata.date_taken is None:
@@ -375,8 +375,8 @@ def extract_metadata(image_path: str) -> ImageMetadata:
                             metadata.date_taken = exif_data[36868]
                         elif 306 in exif_data:  # DateTime
                             metadata.date_taken = exif_data[306]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to read EXIF date: %s", e, exc_info=True)
                 
                 # Try to get title from various sources
                 if metadata.title is None:
@@ -384,14 +384,14 @@ def extract_metadata(image_path: str) -> ImageMetadata:
                         # Try IPTC or other metadata
                         if hasattr(img, 'info') and 'title' in img.info:
                             metadata.title = img.info['title']
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to read image title: %s", e, exc_info=True)
                 
             except Exception as exif_error:
-                logger.debug(f"Error extracting EXIF from {image_path}: {exif_error}")
+                logger.debug("Error extracting EXIF from %s: %s", image_path, exif_error)
         
     except Exception as e:
-        logger.warning(f"Error opening image {image_path} for metadata extraction: {e}")
+        logger.warning("Error opening image %s for metadata extraction: %s", image_path, e)
     
     return metadata
 

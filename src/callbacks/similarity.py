@@ -14,7 +14,7 @@ import dash_bootstrap_components as dbc
 
 from src.components import build_similar_photos_carousel, _preview_url
 from src.sidecar.database import FeaturesDatabase
-from src.config import AppConfig
+from .common import _get_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def register_find_similar_callback(app):
         
         try:
             # Get config
-            config = AppConfig.from_env()
+            config = _get_app_config()
             
             # Check if database exists
             db_path = FeaturesDatabase.default_db_path(folder)
@@ -90,7 +90,7 @@ def register_find_similar_callback(app):
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("message", error_msg)
-                    except:
+                    except (ValueError, KeyError):
                         error_msg = f"{error_msg}: {response.text[:200]}"
                     
                     logger.error("REST vector search API error: %s", error_msg)
@@ -152,7 +152,7 @@ def register_similarity_search_callback(app):
             
             try:
                 # Get config
-                config = AppConfig.from_env()
+                config = _get_app_config()
                 
                 # Check if database exists
                 db_path = FeaturesDatabase.default_db_path(folder)
@@ -184,7 +184,7 @@ def register_similarity_search_callback(app):
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("message", error_msg)
-                    except:
+                    except (ValueError, KeyError):
                         error_msg = f"{error_msg}: {response.text[:200]}"
                     
                     logger.error("REST vector search API error: %s", error_msg)
@@ -233,7 +233,7 @@ def register_similarity_search_callback(app):
                 # Clean up temporary file
                 try:
                     os.unlink(tmp_image_path)
-                except:
+                except OSError:
                     pass
                 
         except Exception as e:
@@ -269,8 +269,7 @@ def register_embedding_status_callback(app):
             if db is None:
                 return dbc.Badge("No database", color="warning")
             
-            from src.config import AppConfig
-            config = AppConfig.from_env()
+            config = _get_app_config()
             
             has_emb = db.has_embedding(current_image_path, config.embedding_model)
             db.close()
@@ -324,7 +323,7 @@ def register_closest_photos_callback(app):
         
         try:
             # Get config
-            config = AppConfig.from_env()
+            config = _get_app_config()
             
             # Get database path to check if it exists
             from src.sidecar.database.db import FeaturesDatabase
@@ -366,7 +365,7 @@ def register_closest_photos_callback(app):
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("message", error_msg)
-                    except:
+                    except (ValueError, KeyError):
                         error_msg = f"{error_msg}: {response.text[:200]}"
                     
                     logger.error("REST vector search API error: %s", error_msg)

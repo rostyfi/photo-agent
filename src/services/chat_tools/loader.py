@@ -54,11 +54,11 @@ def discover_tools() -> List[Type["BaseTool"]]:
             # Log but don't fail on import errors
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to import tool module {name}: {e}")
+            logger.warning("Failed to import tool module %s: %s", name, e)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error loading tool module {name}: {e}", exc_info=True)
+            logger.error("Error loading tool module %s: %s", name, e, exc_info=True)
     
     return tools
 
@@ -86,7 +86,7 @@ def load_all_tools(config: "AppConfig") -> Dict[str, "BaseTool"]:
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to instantiate {tool_class.__name__}: {e}", exc_info=True)
+            logger.error("Failed to instantiate %s: %s", tool_class.__name__, e, exc_info=True)
     
     return tools_map
 

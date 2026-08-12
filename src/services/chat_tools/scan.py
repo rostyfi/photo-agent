@@ -46,7 +46,7 @@ class ScanTool(BaseTool):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error scanning folder: {e}")
+            logger.error("Error scanning folder: %s", e)
             return ChatResponse(
                 status="error",
                 response=f"Failed to scan folder: {str(e)}",

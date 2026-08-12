@@ -310,10 +310,10 @@ def register_metadata_tester_callbacks(app):
                 try:
                     os.unlink(tmp_path)
                 except Exception as e:
-                    logger.warning(f"Failed to clean up temp file {tmp_path}: {e}")
+                    logger.warning("Failed to clean up temp file %s: %s", tmp_path, e)
             
         except Exception as e:
-            logger.error(f"Error in metadata extraction: {e}", exc_info=True)
+            logger.error("Error in metadata extraction: %s", e, exc_info=True)
             error_msg = f"Error extracting metadata: {str(e)}"
             error_component = dbc.Alert(
                 [

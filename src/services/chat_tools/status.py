@@ -94,7 +94,7 @@ class StatusTool(BaseTool):
             import logging
             import traceback
             logger = logging.getLogger(__name__)
-            logger.error(f"Error checking status: {e}")
+            logger.error("Error checking status: %s", e)
             logger.error(traceback.format_exc())
             return ChatResponse(
                 status="error",

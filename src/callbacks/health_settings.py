@@ -16,28 +16,14 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback_context, html
 
-from src.config import AppConfig
-from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.vector_search.availability import is_vector_search_available
-from plugins.llm import create_extractor
+from .common import _get_app_config, _get_extractor
 
 logger = logging.getLogger(__name__)
 
 # Cache for vector search availability check (doesn't change during runtime)
 _VECTOR_SEARCH_AVAILABLE_CACHE = None
 _VECTOR_SEARCH_AVAILABLE_CHECKED = False
-
-
-def _get_extractor(host, port, model, backend, timeout, default_prompt):
-    """Create and return an extractor with the given parameters."""
-    return create_extractor(
-        backend=backend or "ollama",
-        host=host or DEFAULT_LLM_HOST,
-        port=int(port) if port else DEFAULT_LLM_PORT,
-        model=model,
-        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
-        default_prompt=default_prompt,
-    )
 
 
 def register_health_callback(app, create_extractor_fn, app_config):
@@ -539,8 +525,7 @@ def register_embedding_status_indicator_callback(app, app_config):
     )
     def update_embedding_status(host, port, backend, embedding_model, embedding_backend, embedding_enabled):
         # Build a temporary config with the current form values
-        from src.config import AppConfig
-        config = AppConfig.from_env()
+        config = _get_app_config()
         
         # Use form values if provided, otherwise use config defaults
         use_host = host or config.llm_host
@@ -759,8 +744,8 @@ def register_vector_db_check_callback(app):
                         db = FeaturesDatabase(db_path)
                         vector = db.get_embedding(image_path, model_name)
                         db.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to retrieve embedding for display (%s): %s", image_path, e, exc_info=True)
                     
                     # Format vector for display
                     if vector:
@@ -824,7 +809,7 @@ def register_vector_db_check_callback(app):
             
         except Exception as e:
             import traceback
-            logger.error(f"Error in check_vector_db: {e}")
+            logger.error("Error in check_vector_db: %s", e)
             logger.error(traceback.format_exc())
             return dbc.Alert(
                 f"Error checking vector database: {str(e)}",

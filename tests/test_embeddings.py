@@ -72,32 +72,34 @@ class TestOllamaEmbeddingGenerator:
         # Should return default 512 for unknown models
         assert generator.dimension("unknown-model") == 512
 
-    @patch("requests.get")
-    def test_check_ollama_version_success(self, mock_get):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_check_ollama_version_success(self, mock_session_cls):
         """Test successful Ollama version check."""
+        mock_session = mock_session_cls.return_value
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"version": "0.1.0"}
-        mock_get.return_value = mock_response
+        mock_session.get.return_value = mock_response
         
         generator = OllamaEmbeddingGenerator()
         version = generator._check_ollama_version()
         assert version == "0.1.0"
 
-    @patch("requests.get")
-    def test_check_ollama_version_failure(self, mock_get):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_check_ollama_version_failure(self, mock_session_cls):
         """Test failed Ollama version check."""
         import requests
-        mock_get.side_effect = requests.exceptions.RequestException("Connection error")
+        mock_session = mock_session_cls.return_value
+        mock_session.get.side_effect = requests.exceptions.RequestException("Connection error")
         
         generator = OllamaEmbeddingGenerator()
         version = generator._check_ollama_version()
         assert version is None
 
-    @patch("requests.post")
-    @patch("requests.get")
-    def test_health_check_success(self, mock_get, mock_post):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_health_check_success(self, mock_session_cls):
         """Test successful health check."""
+        mock_session = mock_session_cls.return_value
         # Mock version check endpoint (called during __init__)
         version_response = Mock()
         version_response.status_code = 200
@@ -112,17 +114,17 @@ class TestOllamaEmbeddingGenerator:
         embeddings_response = Mock()
         embeddings_response.status_code = 400  # Bad request means endpoint exists
         
-        mock_get.side_effect = [version_response, tags_response]
-        mock_post.return_value = embeddings_response
+        mock_session.get.side_effect = [version_response, tags_response]
+        mock_session.post.return_value = embeddings_response
         
         generator = OllamaEmbeddingGenerator()
         result = generator.health_check()
         assert result is True
 
-    @patch("requests.post")
-    @patch("requests.get")
-    def test_health_check_endpoint_not_found(self, mock_get, mock_post):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_health_check_endpoint_not_found(self, mock_session_cls):
         """Test health check when embeddings endpoint doesn't exist."""
+        mock_session = mock_session_cls.return_value
         # Mock version check endpoint (called during __init__)
         version_response = Mock()
         version_response.status_code = 200
@@ -137,16 +139,17 @@ class TestOllamaEmbeddingGenerator:
         embeddings_response = Mock()
         embeddings_response.status_code = 404
         
-        mock_get.side_effect = [version_response, tags_response]
-        mock_post.return_value = embeddings_response
+        mock_session.get.side_effect = [version_response, tags_response]
+        mock_session.post.return_value = embeddings_response
         
         generator = OllamaEmbeddingGenerator()
         result = generator.health_check()
         assert result is False
 
-    @patch("requests.get")
-    def test_list_models_success(self, mock_get):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_list_models_success(self, mock_session_cls):
         """Test successful model listing."""
+        mock_session = mock_session_cls.return_value
         # Mock version check endpoint (called during __init__)
         version_response = Mock()
         version_response.status_code = 200
@@ -161,24 +164,25 @@ class TestOllamaEmbeddingGenerator:
                 {"name": "all-minilm"},
             ]
         }
-        mock_get.side_effect = [version_response, tags_response]
+        mock_session.get.side_effect = [version_response, tags_response]
         
         generator = OllamaEmbeddingGenerator()
         models = generator.list_models()
         assert "nomic-embed-text" in models
         assert "all-minilm" in models
 
-    @patch("requests.get")
-    def test_list_models_failure(self, mock_get):
+    @patch("src.embeddings.ollama.requests.Session")
+    def test_list_models_failure(self, mock_session_cls):
         """Test failed model listing."""
         import requests
+        mock_session = mock_session_cls.return_value
         # Mock version check endpoint (called during __init__)
         version_response = Mock()
         version_response.status_code = 200
         version_response.json.return_value = {"version": "0.1.0"}
         
         # Mock tags endpoint - raise exception
-        mock_get.side_effect = [version_response, requests.exceptions.RequestException("Connection error")]
+        mock_session.get.side_effect = [version_response, requests.exceptions.RequestException("Connection error")]
         
         generator = OllamaEmbeddingGenerator()
         models = generator.list_models()

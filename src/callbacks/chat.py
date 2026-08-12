@@ -60,7 +60,7 @@ def _call_chat_endpoint(message: str, ollama_host: Optional[str] = None, ollama_
         return response.json()
         
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error calling /_api/chat endpoint: {e}")
+        logger.error("Error calling /_api/chat endpoint: %s", e)
         return {
             "status": "error",
             "response": "",
@@ -68,7 +68,7 @@ def _call_chat_endpoint(message: str, ollama_host: Optional[str] = None, ollama_
             "message": f"Failed to connect to chat service: {str(e)}"
         }
     except Exception as e:
-        logger.error(f"Error calling /_api/chat endpoint: {e}", exc_info=True)
+        logger.error("Error calling /_api/chat endpoint: %s", e, exc_info=True)
         return {
             "status": "error",
             "response": "",
@@ -110,7 +110,7 @@ def register_chat_callback(app, app_config: Optional[Any] = None):
         if not message or not message.strip():
             return dash.no_update, dash.no_update, dash.no_update
         
-        logger.debug(f"Sending message: {message}")
+        logger.debug("Sending message: %s", message)
         
         if chat_history is None:
             chat_history = []
@@ -305,7 +305,7 @@ def register_chat_endpoint_test_callback(app, app_config: Optional[Any] = None):
                     className="mb-0",
                 )
         except Exception as e:
-            logger.error(f"Error testing chat endpoint: {e}", exc_info=True)
+            logger.error("Error testing chat endpoint: %s", e, exc_info=True)
             return dbc.Alert(
                 f"Error: {str(e)}",
                 color="danger",

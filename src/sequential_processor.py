@@ -78,7 +78,7 @@ class SequentialProcessor:
                 conn = self._db.init_db()
                 conn.close()  # Close the connection after schema initialization
             except Exception as e:
-                logger.error(f"Failed to initialize database: {e}")
+                logger.error("Failed to initialize database: %s", e)
                 self._db = None
         
         # Initialize embedding generator if enabled and database is available
@@ -88,7 +88,7 @@ class SequentialProcessor:
             try:
                 self._db.init_vector_search()
             except RuntimeError as e:
-                logger.warning(f"Vector search not available (sqlite-vec not installed): {e}")
+                logger.warning("Vector search not available (sqlite-vec not installed): %s", e)
                 # This is OK - we can still save embeddings to image_embeddings table
     
     def _extract_and_save_metadata(self, image_path: str) -> None:
@@ -132,18 +132,12 @@ class SequentialProcessor:
             from src.embeddings import list_embedding_backends
             available = list_embedding_backends()
             logger.error(
-                f"Failed to create embedding generator: {e}. "
-                f"Available backends: {available}. "
-                f"Check LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND environment variable. "
-                f"{VEC_REQUIRED}"
+                "Failed to create embedding generator: %s. Available backends: %s. Check LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND environment variable. %s", e, available, VEC_REQUIRED
             )
             self._embedding_generator = None
         except Exception as e:
             logger.error(
-                f"Failed to create embedding generator with backend='{self.config.embedding_backend}', "
-                f"host='{self.config.host}', port={self.config.port}, model='{self.config.embedding_model}': {e}. "
-                f"Check that the embedding server is running and accessible. "
-                f"{VEC_REQUIRED}"
+                "Failed to create embedding generator with backend='%s', host='%s', port=%s, model='%s': %s. Check that the embedding server is running and accessible. %s", self.config.embedding_backend, self.config.host, self.config.port, self.config.embedding_model, e, VEC_REQUIRED
             )
             self._embedding_generator = None
         
@@ -191,16 +185,16 @@ class SequentialProcessor:
                         image_path, description, self.config.embedding_model
                     )
                     if error:
-                        logger.warning(f"Embedding error for {image_path}: {error}")
+                        logger.warning("Embedding error for %s: %s", image_path, error)
                         # Store error in result for display
                         result.embedding_error = error
                     else:
-                        logger.info(f"Embedding generated for {image_path} (dim: {len(embedding) if embedding else 0})")
+                        logger.info("Embedding generated for %s (dim: %s)", image_path, len(embedding) if embedding else 0)
                 else:
-                    logger.warning(f"No description available for embedding generation for {image_path}")
+                    logger.warning("No description available for embedding generation for %s", image_path)
                     result.embedding_error = "No description available for embedding"
             except Exception as e:
-                logger.error(f"Failed to generate embedding for {image_path}: {e}")
+                logger.error("Failed to generate embedding for %s: %s", image_path, e)
                 result.embedding_error = str(e)
         
         # Save the extraction result to database
@@ -267,8 +261,8 @@ class SequentialProcessor:
                 if progress_callback:
                     try:
                         progress_callback(i, len(paths_to_process))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Progress callback failed: %s", e, exc_info=True)
                 
                 try:
                     result = self.process_image(image_path, prompt=prompt)
@@ -298,8 +292,8 @@ class SequentialProcessor:
                     if progress_callback:
                         try:
                             progress_callback(successes + failures, len(paths_to_process))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Progress callback failed: %s", e, exc_info=True)
         
         return {
             "total_found": total_found,

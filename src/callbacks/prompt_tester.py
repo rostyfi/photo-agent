@@ -13,22 +13,10 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html
 
 from src.interfaces import ProcessingResult
-from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from plugins.llm import create_extractor
+from .common import _get_extractor
 
 logger = logging.getLogger(__name__)
-
-
-def _get_extractor(host, port, model, backend, timeout, default_prompt):
-    """Create and return an extractor with the given parameters."""
-    return create_extractor(
-        backend=backend or "ollama",
-        host=host or DEFAULT_LLM_HOST,
-        port=int(port) if port else DEFAULT_LLM_PORT,
-        model=model,
-        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
-        default_prompt=default_prompt,
-    )
 
 
 def build_extraction_result(contents, filename, result: ProcessingResult, dry_run=False):
@@ -335,7 +323,7 @@ def register_prompt_tester_callbacks(app, create_extractor_fn, app_config):
             return progress, result_component, False
             
         except Exception as e:
-            logger.error(f"Error in prompt tester extraction: {e}", exc_info=True)
+            logger.error("Error in prompt tester extraction: %s", e, exc_info=True)
             error_msg = f"Error extracting features: {str(e)}"
             error_component = dbc.Alert(
                 [

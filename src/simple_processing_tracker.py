@@ -88,9 +88,9 @@ class SimpleProcessingTracker:
                 """
             )
             conn.commit()
-            logger.debug(f"Processing tracker schema ensured for {self._db_path}")
+            logger.debug("Processing tracker schema ensured for %s", self._db_path)
         except Exception as e:
-            logger.error(f"Failed to ensure processing tracker schema: {e}")
+            logger.error("Failed to ensure processing tracker schema: %s", e)
             raise
 
     def get_processed_files(self) -> Set[str]:
@@ -125,7 +125,7 @@ class SimpleProcessingTracker:
             
             return processed
         except Exception as e:
-            logger.error(f"Failed to get processed files: {e}")
+            logger.error("Failed to get processed files: %s", e)
             return set()
 
     def get_failed_files(self) -> List[Dict]:
@@ -152,7 +152,7 @@ class SimpleProcessingTracker:
                 for row in cursor.fetchall()
             ]
         except Exception as e:
-            logger.error(f"Failed to get failed files: {e}")
+            logger.error("Failed to get failed files: %s", e)
             return []
 
     def mark_completed(self, image_path: str) -> None:
@@ -177,12 +177,12 @@ class SimpleProcessingTracker:
                 (image_path, STATUS_COMPLETED, now)
             )
             conn.commit()
-            logger.debug(f"Marked {image_path} as completed")
+            logger.debug("Marked %s as completed", image_path)
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
             clear_processed_cache(self.folder)
         except Exception as e:
-            logger.error(f"Failed to mark {image_path} as completed: {e}")
+            logger.error("Failed to mark %s as completed: %s", image_path, e)
             raise
 
     def mark_failed(self, image_path: str, error_code: Optional[str] = None, error_msg: Optional[str] = None) -> None:
@@ -209,12 +209,12 @@ class SimpleProcessingTracker:
                 (image_path, STATUS_FAILED, now, error_code, error_msg)
             )
             conn.commit()
-            logger.debug(f"Marked {image_path} as failed: {error_msg}")
+            logger.debug("Marked %s as failed: %s", image_path, error_msg)
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
             clear_processed_cache(self.folder)
         except Exception as e:
-            logger.error(f"Failed to mark {image_path} as failed: {e}")
+            logger.error("Failed to mark %s as failed: %s", image_path, e)
             raise
 
     def is_processed(self, image_path: str) -> bool:
@@ -237,7 +237,7 @@ class SimpleProcessingTracker:
             )
             return cursor.fetchone() is not None
         except Exception as e:
-            logger.error(f"Failed to check if {image_path} is processed: {e}")
+            logger.error("Failed to check if %s is processed: %s", image_path, e)
             return False
 
     def get_stats(self) -> Dict:
@@ -270,5 +270,5 @@ class SimpleProcessingTracker:
                 }
             return {"total": 0, "completed": 0, "failed": 0}
         except Exception as e:
-            logger.error(f"Failed to get stats: {e}")
+            logger.error("Failed to get stats: %s", e)
             return {"total": 0, "completed": 0, "failed": 0}

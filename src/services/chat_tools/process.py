@@ -57,8 +57,8 @@ class ProcessTool(BaseTool):
             # Clear any existing batch state for this folder
             try:
                 clear_batch_state(folder_path)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to clear batch state for %s: %s", folder_path, e, exc_info=True)
             
             # Write initial batch state
             write_batch_state(folder_path, "running_all", total, 0, status_msg="Processing started via chat")
@@ -80,7 +80,7 @@ class ProcessTool(BaseTool):
             # Process files in background thread
             def process_in_background():
                 try:
-                    logger.info(f"[Chat /process] Starting processing for {total} files in {folder_path}")
+                    logger.info("[Chat /process] Starting processing for %s files in %s", total, folder_path)
                     
                     # Create processor with folder for database operations
                     processor = SequentialProcessor(
@@ -101,7 +101,7 @@ class ProcessTool(BaseTool):
                                 status_msg=f"Processing - {processed}/{total}"
                             )
                         except Exception as e:
-                            logger.warning(f"Failed to write batch state: {e}")
+                            logger.warning("Failed to write batch state: %s", e)
                     
                     # Initial progress update
                     update_progress(0, total)
@@ -123,9 +123,9 @@ class ProcessTool(BaseTool):
                         status_msg=f"All {result['successes'] + result['failures']} images processed"
                     )
                     
-                    logger.info(f"[Chat /process] Completed: {result}")
+                    logger.info("[Chat /process] Completed: %s", result)
                 except Exception as e:
-                    logger.error(f"[Chat /process] Error: {e}")
+                    logger.error("[Chat /process] Error: %s", e)
                     # Write error state
                     try:
                         write_batch_state(
@@ -135,8 +135,8 @@ class ProcessTool(BaseTool):
                             0,
                             status_msg=f"Processing failed: {str(e)}"
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Failed to write aborted batch state for %s: %s", folder_path, exc, exc_info=True)
             
             # Start processing in background thread
             thread = threading.Thread(target=process_in_background, daemon=True)
@@ -152,7 +152,7 @@ class ProcessTool(BaseTool):
             import logging
             import traceback
             logger = logging.getLogger(__name__)
-            logger.error(f"Error starting processing: {e}")
+            logger.error("Error starting processing: %s", e)
             logger.error(traceback.format_exc())
             return ChatResponse(
                 status="error",

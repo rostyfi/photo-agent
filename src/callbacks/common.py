@@ -11,8 +11,10 @@ The simplified approach:
 
 import logging
 from contextlib import contextmanager
+from typing import Optional
 
-from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST
+from src.config import AppConfig
+from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.components import build_detail_modal_content, build_fullscreen_viewer
 from src.sidecar.database import FeaturesDatabase
 from src.simple_processing_tracker import SimpleProcessingTracker
@@ -23,6 +25,23 @@ logger = logging.getLogger(__name__)
 
 # Cache for SimpleProcessingTracker instances to avoid recreating on every poll
 _TRACKER_INSTANCE_CACHE: dict = {}  # folder -> SimpleProcessingTracker
+
+# Process-wide AppConfig cache. Environment variables do not change during a
+# running session, so reading them once avoids re-parsing on every callback.
+_CACHED_APP_CONFIG: Optional[AppConfig] = None
+
+
+def _get_app_config() -> AppConfig:
+    """Return the process-wide AppConfig, loading it once from the environment.
+
+    Callback hot paths should call this instead of ``AppConfig.from_env()``
+    to avoid re-parsing the environment (and re-running ``load_dotenv()``) on
+    every invocation.
+    """
+    global _CACHED_APP_CONFIG
+    if _CACHED_APP_CONFIG is None:
+        _CACHED_APP_CONFIG = AppConfig.from_env()
+    return _CACHED_APP_CONFIG
 
 
 def _get_tracker(folder: str) -> SimpleProcessingTracker:
@@ -47,20 +66,30 @@ def _db_session(folder):
 
 
 def _get_extractor(host, port, model, backend, timeout, default_prompt):
-    """Create and return an extractor with the given parameters."""
+    """Create and return an extractor with the given parameters.
+
+    This is the canonical helper used across callback modules; import it
+    rather than redefining a local ``_get_extractor``.
+    """
     return create_extractor(
         backend=backend or "ollama",
         host=host or DEFAULT_LLM_HOST,
-        port=int(port) if port else 11434,
+        port=int(port) if port else DEFAULT_LLM_PORT,
         model=model or DEFAULT_LLM_MODEL,
-        timeout=int(timeout) if timeout else 120,
+        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
         default_prompt=default_prompt,
     )
 
 
-def _make_processing_config(host, port, model, backend, timeout, default_prompt, dry_run=False, app_config=None):
+def _make_processing_config(host, port, model, backend, timeout, default_prompt,
+                            dry_run=False, app_config=None,
+                            embedding_enabled=True, embedding_model=None,
+                            embedding_backend=None):
     """Build a ProcessingConfig from loosely-typed form/state values.
-    
+
+    This is the canonical helper used across callback modules; import it
+    rather than redefining a local ``_make_processing_config``.
+
     Args:
         host: LLM server host
         port: LLM server port
@@ -69,34 +98,33 @@ def _make_processing_config(host, port, model, backend, timeout, default_prompt,
         timeout: Request timeout in seconds
         default_prompt: Default extraction prompt
         dry_run: If True, use dry_run backend
-        app_config: Optional AppConfig to extract embedding settings from
+        app_config: Optional AppConfig to draw embedding/similarity defaults from
+        embedding_enabled: Override for the embedding toggle (default True)
+        embedding_model: Override for embedding model (falls back to app_config)
+        embedding_backend: Override for embedding backend (falls back to app_config)
     """
-    # Extract embedding configuration from app_config if provided
     if app_config is not None:
-        embedding_enabled = app_config.embedding_enabled
-        embedding_model = app_config.embedding_model
-        embedding_backend = app_config.embedding_backend
+        emb_model = embedding_model or app_config.embedding_model
+        emb_backend = embedding_backend or app_config.embedding_backend
         similarity_limit = app_config.similarity_limit
         similarity_metric = app_config.similarity_metric
     else:
-        # Fall back to defaults
-        embedding_enabled = True
-        embedding_model = "nomic-embed-text"
-        embedding_backend = "ollama"
+        emb_model = embedding_model or "nomic-embed-text"
+        emb_backend = embedding_backend or "ollama"
         similarity_limit = 10
         similarity_metric = "cosine"
-    
+
     from src.config import ProcessingConfig
     return ProcessingConfig(
         backend="dry_run" if dry_run else (backend or "ollama"),
-        host=host,
-        port=int(port) if port else 11434,
+        host=host or DEFAULT_LLM_HOST,
+        port=int(port) if port else DEFAULT_LLM_PORT,
         model=model,
-        timeout=int(timeout) if timeout else 120,
+        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
         default_prompt=default_prompt,
-        embedding_enabled=embedding_enabled,
-        embedding_model=embedding_model,
-        embedding_backend=embedding_backend,
+        embedding_enabled=bool(embedding_enabled) if embedding_enabled is not None else True,
+        embedding_model=emb_model,
+        embedding_backend=emb_backend,
         similarity_limit=similarity_limit,
         similarity_metric=similarity_metric,
     )
@@ -125,8 +153,7 @@ def _open_modal(image_path, folder, index, paths):
                 # Try to get embedding vector (only if we don't already have an error)
                 if embedding_error is None:
                     try:
-                        from src.config import AppConfig
-                        config = AppConfig.from_env()
+                        config = _get_app_config()
                         
                         # Check if vector search library is available
                         vec_available = is_vector_search_available()
@@ -154,7 +181,7 @@ def _open_modal(image_path, folder, index, paths):
                 # Check if embedding metadata exists in image_embeddings table
                 if embedding_error is None and embedding is None:
                     try:
-                        config = AppConfig.from_env()
+                        config = _get_app_config()
                         if db.has_embedding(image_path, config.embedding_model):
                             # Embedding metadata exists but vector not available for search
                             vec_available = is_vector_search_available()
@@ -187,17 +214,17 @@ def _open_modal(image_path, folder, index, paths):
                                     "sqlite-vec is required for vector search. "
                                     "Please install the required vector search library."
                                 )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to load embedding metadata for %s: %s", image_path, e, exc_info=True)
                 
                 # If image was processed but no embedding and no error, it means embedding generation failed
                 if embedding_error is None and embedding is None and metadata and metadata.get("success"):
                     try:
-                        config = AppConfig.from_env()
+                        config = _get_app_config()
                         if config.embedding_enabled:
                             embedding_error = "Embedding was enabled during processing but no result was produced - check Ollama server and model support"
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to check embedding config for %s: %s", image_path, e, exc_info=True)
             except Exception:
                 logger.warning("Failed to load metadata for %s", image_path, exc_info=True)
     
@@ -218,8 +245,7 @@ def _open_fullscreen_content(image_path, folder, index, paths):
                 
                 # Try to get embedding vector
                 try:
-                    from src.config import AppConfig
-                    config = AppConfig.from_env()
+                    config = _get_app_config()
                     
                     # Check if vector search library is available
                     vec_available = is_vector_search_available()
