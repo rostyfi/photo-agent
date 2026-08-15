@@ -251,6 +251,7 @@ The web application (`app.py`) provides several REST API endpoints for programma
 | GET | `/_api/test_vector_roundtrip` | Test vector storage and retrieval |
 | POST | `/_api/store_vector` | Store a vector embedding in the database |
 | GET | `/_api/get_vector` | Retrieve a vector embedding from the database |
+| POST | `/_api/reveal` | Return the filesystem path of a photo (for copy/display) |
 
 ### Chat API Example
 
@@ -291,6 +292,44 @@ curl -X POST http://localhost:8050/_api/find_similar \
   -H "Content-Type: application/json" \
   -d '{"folder": "/path/to/photos", "image_path": "/path/to/query.jpg", "limit": 5}'
 ```
+
+### Copy Path API Example
+
+The `/_api/reveal` endpoint returns the filesystem path of a photo so you can locate it. The path must resolve to a real file inside `folder` (directory-traversal attempts are rejected with 404).
+
+```bash
+curl -X POST http://localhost:8050/_api/reveal \
+  -H "Content-Type: application/json" \
+  -d '{"folder": "/path/to/photos", "path": "/path/to/photos/vacation.jpg"}'
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "path": "/path/to/photos/vacation.jpg",
+  "folder": "/path/to/photos"
+}
+```
+
+In the web UI, click **Copy Path** in the detail modal or the fullscreen viewer. The photo's full path is shown in a toast and copied to your clipboard. The path is the server-side path (where the app reads the file); when the app runs on a remote machine, that is the path on that machine.
+
+#### Path mapping (`LOCAL_PHOTO_AGENT_REVEAL_MAP`)
+
+When the server-side path differs from the path you want to see (e.g. a Docker bind mount exposes host `/home/rost/Pictures` as `/photos` inside the container), set `LOCAL_PHOTO_AGENT_REVEAL_MAP` to a newline- or semicolon-separated list of `container_prefix=host_prefix` entries. The first matching prefix is replaced before the path is returned:
+
+```
+LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/rost/Pictures
+```
+
+Multiple entries:
+
+```
+LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/rost/Pictures;/data=/mnt/data
+```
+
+When unset (the default), the app auto-detects the mapping by reading `/proc/self/mountinfo` inside the container (no manual config needed for Docker bind mounts). On the host (no container), the server-side path is returned as-is.
 
 ## Usage as a Library
 
@@ -350,126 +389,6 @@ results = process_paths(image_paths, extractor, resume=True)
 print(f"Processed {results['processed']} images, {results['successes']} succeeded")
 ```
 
-## Project Structure
-
-```
-.
-├── main.py              # Core extractor module + CLI entry point
-├── app.py               # Dash web application with REST API endpoints
-├── Dockerfile           # Docker image definition
-├── Dockerfile.arm       # ARM-specific Docker image
-├── docker-compose.yml   # Docker Compose configuration
-├── docker-compose.arm.yml # ARM-specific compose config
-├── .dockerignore        # Files excluded from Docker build
-├── entrypoint.sh        # Container entrypoint script
-├── requirements.txt     # Python dependencies
-├── .env.example         # Configuration template
-├── setup.sh             # One-command Docker setup & run (Linux/macOS)
-├── setup-arm.sh         # ARM-specific setup script
-├── setup.bat            # Windows setup script
-├── src/                 # Core application modules
-│   ├── __init__.py
-│   ├── config.py        # AppConfig / ProcessingConfig with env var loading
-│   ├── constants.py     # Centralized constants and error messages
-│   ├── interfaces.py    # BasePhotoExtractor, ProcessingResult, ErrorCode
-│   ├── discovery.py     # PhotoList: recursive image file discovery
-│   ├── utils.py         # Utility functions (image encoding, etc.)
-│   ├── state.py         # Global shutdown and job cancellation signals
-│   ├── batch_state.py   # Batch progress state persistence
-│   ├── sequential_processor.py # Sequential image processing
-│   ├── simple_processing_tracker.py # Simple database-based processing tracker
-│   ├── metadata.py       # EXIF/IPTC/XMP metadata extraction
-│   ├── file_processing.py # File processing utilities
-│   ├── api/             # REST API handlers
-│   │   ├── __init__.py
-│   │   └── chat.py      # /_api/chat endpoint handler
-│   ├── sidecar/         # Sidecar persistence
-│   │   ├── __init__.py
-│   │   ├── store.py     # AbstractSidecarStore
-│   │   └── database/    # FeaturesDatabase (SQLite)
-│   │       ├── __init__.py
-│   │       └── db.py
-│   ├── embeddings/       # Vector embedding support
-│   │   ├── __init__.py
-│   │   ├── base.py       # BaseEmbeddingGenerator
-│   │   ├── ollama.py     # OllamaEmbeddingGenerator
-│   │   └── registry.py   # Embedding backend registry
-│   ├── vector_search/    # Vector search utilities
-│   │   ├── __init__.py
-│   │   └── availability.py # sqlite-vec availability checking
-│   ├── services/         # Service layer
-│   │   ├── __init__.py
-│   │   ├── chat.py       # ChatService
-│   │   ├── chat_response.py # ChatResponse dataclass
-│   │   └── chat_tools/   # Chat command tools (auto-discovered)
-│   │       ├── __init__.py
-│   │       ├── loader.py # Tool auto-discovery and registration
-│   │       ├── base.py   # BaseTool class
-│   │       ├── about.py  # /about tool
-│   │       ├── count.py  # /count tool
-│   │       ├── find.py   # /find tool
-│   │       ├── process.py # /process tool
-│   │       ├── scan.py   # /scan tool
-│   │       ├── status.py # /status tool
-│   │       └── tools_tool.py # /tools tool
-│   ├── coordinator/      # Processing coordination
-│   │   └── __init__.py
-│   ├── callbacks/        # Dash UI callbacks
-│   │   ├── __init__.py
-│   │   ├── batch.py      # Batch processing callbacks
-│   │   ├── chat.py       # Chat interface callbacks
-│   │   ├── common.py     # Shared callback helpers
-│   │   ├── errors.py     # Error handling callbacks
-│   │   ├── folder.py     # Folder discovery callbacks
-│   │   ├── health_settings.py # Health check & settings
-│   │   ├── metadata_tester.py # Metadata extraction testing
-│   │   ├── mode_toggle.py # Mode toggle callbacks
-│   │   ├── prompt_tester.py # Prompt testing callbacks
-│   │   ├── search.py     # Full-text search callback
-│   │   ├── similarity.py  # Vector similarity callbacks
-│   │   ├── sql_explorer.py # SQL explorer callback
-│   │   ├── tags.py       # Tag cloud callbacks
-│   │   └── viewer.py     # Detail modal & fullscreen viewer
-│   ├── components.py     # Dash UI component builders
-│   ├── layout_components.py # Layout component utilities
-│   └── layout.py         # Main Dash application layout
-├── plugins/             # Plugin system
-│   ├── __init__.py
-│   ├── llm/              # LLM backend plugins
-│   │   ├── __init__.py
-│   │   ├── base.py       # Backward-compat re-exports
-│   │   ├── ollama.py     # OllamaPhotoExtractor
-│   │   ├── chat.py       # OllamaChatClient (chat client)
-│   │   ├── dry_run.py    # DryRunPhotoExtractor
-│   │   ├── factory.py    # create_extractor() factory
-│   │   ├── registry.py   # Backend registration
-│   │   └── backends/
-│   │       ├── __init__.py
-│   │       ├── ollama/
-│   │       │   └── __init__.py
-│   │       └── dry_run/
-│   │           └── __init__.py
-│   ├── formats/          # Image format plugins
-│   │   ├── __init__.py
-│   │   ├── image.py      # read_image_bytes() with auto-discovery
-│   │   ├── registry.py   # Format reader registry
-│   │   └── heic/
-│   │       ├── __init__.py
-│   │       └── converter.py # HEIC/HEIF to JPEG conversion
-│   └── embeddings/       # Embedding backend plugins
-│       ├── __init__.py
-│       └── backends/
-│           ├── __init__.py
-│           └── ollama/
-│               └── __init__.py
-├── assets/              # Static assets (CSS, etc.)
-├── tests/               # Unit and integration tests
-│   ├── __init__.py
-│   └── test_*.py        # Various test modules
-├── plan/                # Development planning documents
-└── README.md            # This file
-```
-
 ## Supported Image Formats
 
 Any format your local environment can read (commonly `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.tiff`, `.tif`), plus **HEIC / HEIF** (Apple iPhone photos) through on-the-fly JPEG conversion for both processing and web previews.
@@ -494,30 +413,12 @@ When a HEIC image is processed or previewed in the web UI, it is automatically c
 - The application now uses a **simplified processing tracker** (`SimpleProcessingTracker`) that stores tracking information directly in the SQLite database instead of using WAL files.
 - **Automatic resume**: By default, the CLI will skip already-processed images on consecutive runs (use `--no-resume` to force reprocessing).
 
-## Code Organization
-
-The codebase follows a clean architecture with:
-
-- **`src/constants.py`** — Centralized constants and error messages to reduce duplication (e.g., `VEC_REQUIRED`, `STATUS_COMPLETED`, `STATUS_FAILED`)
-- **`src/config.py`** — Configuration dataclasses with environment variable loading and validation
-- **`src/interfaces.py`** — Core abstractions: `BasePhotoExtractor`, `ProcessingResult`, `ErrorCode` enum
-- **`src/sequential_processor.py`** — Main processing logic with `SequentialProcessor` class handling image processing, metadata extraction, and embedding generation
-- **`src/simple_processing_tracker.py`** — Simple database-based tracking replacing the complex WAL system
-- **`src/metadata.py`** — EXIF, IPTC, and XMP metadata extraction utilities
-- **`src/services/chat.py`** — Chat service for Ollama interaction
-- **`src/embeddings/`** — Vector embedding support with pluggable backends
-- **`src/vector_search/`** — Vector search utilities and availability checking
-- **`src/sidecar/database/db.py`** — SQLite database schema and operations via `FeaturesDatabase`
-- **Pluggable architecture** — LLM backends (`plugins/llm/`) and image format handlers (`plugins/formats/`) can be added via plugins
-- **Clean separation** — CLI processing (`main.py`) vs Web UI (`app.py` with callbacks)
-- **Centralized constants** — All repeated strings and messages in `src/constants.py`
-
-### Key Design Principles
+## Key Design Principles
 
 - **Dependency injection** — Services and extractors are passed to components that need them
 - **Pluggable backends** — Add new LLM providers or embedding generators via the plugin system
 - **Progressive enhancement** — Works without sqlite-vec (with fallback), without embeddings, without metadata
 - **Backward compatibility** — SQLite database structure supports existing data
 - **Separation of concerns** — CLI, Web UI, and core processing logic are cleanly separated
-
-This organization reduces code duplication and makes the codebase easier to maintain and extend.
+- **Clean architecture** — Centralized constants, configuration dataclasses, and well-defined interfaces
+- **Pluggable architecture** — LLM backends (`plugins/llm/`) and image format handlers (`plugins/formats/`) can be added via plugins

@@ -327,3 +327,104 @@ def register_fullscreen_find_similar_callback(app):
             logger.error("Failed to find similar images in fullscreen: %s", e)
             return None
 
+
+_REVEAL_CLIENTSIDE = """
+function(nClicks, storeData, folder) {
+    if (!nClicks) {
+        return dash_clientside.no_update;
+    }
+    var paths = (storeData && storeData.paths) || [];
+    var idx = storeData && storeData.index;
+    if (idx === null || idx === undefined || idx < 0 || idx >= paths.length) {
+        return dash_clientside.no_update;
+    }
+    var imagePath = paths[idx];
+    fetch('/_api/reveal', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: imagePath, folder: folder})
+    }).then(function(r) {
+        return r.json().then(function(data) {
+            if (!r.ok || data.status !== 'success') {
+                alert('Could not get photo path: ' + (data.message || ('HTTP ' + r.status)));
+                return;
+            }
+            var path = data.path || '';
+            var folderPath = data.folder || path;
+            // Copy the folder path to the clipboard.
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(path).catch(function(){});
+            }
+            // Show a transient toast with the full path and a Copy button.
+            var existing = document.getElementById('reveal-toast');
+            if (existing) { existing.remove(); }
+            var toast = document.createElement('div');
+            toast.id = 'reveal-toast';
+            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2000;' +
+                'max-width:480px;background:#343a40;color:#f8f9fa;border:1px solid #495057;' +
+                'border-radius:8px;padding:12px 14px;font-family:inherit;font-size:14px;' +
+                'box-shadow:0 4px 12px rgba(0,0,0,0.4);word-break:break-all;';
+            var head = document.createElement('div');
+            head.style.cssText = 'font-weight:bold;margin-bottom:6px;';
+            head.textContent = 'Photo path (copied to clipboard):';
+            toast.appendChild(head);
+            var body = document.createElement('div');
+            body.textContent = path;
+            body.style.cssText = 'user-select:text;cursor:text;margin-bottom:8px;';
+            toast.appendChild(body);
+            var copyBtn = document.createElement('button');
+            copyBtn.textContent = 'Copy';
+            copyBtn.style.cssText = 'margin-right:8px;background:#0d6efd;color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;';
+            copyBtn.onclick = function() {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(path).then(function(){ copyBtn.textContent = 'Copied'; });
+                } else {
+                    var range = document.createRange(); range.selectNode(body);
+                    window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+                    document.execCommand('copy'); window.getSelection().removeAllRanges();
+                    copyBtn.textContent = 'Copied';
+                }
+            };
+            toast.appendChild(copyBtn);
+            var closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = 'background:#6c757d;color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;';
+            closeBtn.onclick = function() { toast.remove(); };
+            toast.appendChild(closeBtn);
+            document.body.appendChild(toast);
+            setTimeout(function() { if (document.getElementById('reveal-toast')) { document.getElementById('reveal-toast').remove(); } }, 8000);
+        });
+    }).catch(function(e) {
+        alert('Could not get photo path: ' + e);
+    });
+    return dash_clientside.no_update;
+}
+"""
+
+
+def register_reveal_callbacks(app):
+    """Wire the 'Copy Path' buttons to POST /_api/reveal.
+
+    One clientside callback covers the detail-modal button; a second covers
+    the fullscreen-viewer button. Both read the current image from
+    ``photo-list-store`` and the active folder from ``input-folder``, fetch
+    the photo's path from the server, copy it to the clipboard, and show it
+    in a transient toast.
+    """
+    app.clientside_callback(
+        _REVEAL_CLIENTSIDE,
+        Output("reveal-dummy", "children"),
+        Input("btn-reveal-detail", "n_clicks"),
+        State("photo-list-store", "data"),
+        State("input-folder", "value"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        _REVEAL_CLIENTSIDE,
+        Output("reveal-dummy", "children", allow_duplicate=True),
+        Input("btn-reveal-fullscreen", "n_clicks"),
+        State("photo-list-store", "data"),
+        State("input-folder", "value"),
+        prevent_initial_call=True,
+    )
+

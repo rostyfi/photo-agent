@@ -68,8 +68,10 @@ PROCESSING_ERROR = "Processing error"
 # CONFIGURATION CONSTANTS
 # =============================================================================
 
-# Default configuration values
-DEFAULT_LLM_HOST = "192.168.0.150"
+# Default configuration values.
+# The LLM host default is Ollama's conventional local bind address; override
+# per deployment via the LOCAL_PHOTO_AGENT_LLM_HOST environment variable.
+DEFAULT_LLM_HOST = "127.0.0.1"
 DEFAULT_LLM_PORT = 11434
 DEFAULT_LLM_TIMEOUT = 120
 DEFAULT_LLM_MODEL = "gemma4:e2b-it-qat"

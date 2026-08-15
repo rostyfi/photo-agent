@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Generator, Optional, Union
 
 # Import constants for default values
 from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST
@@ -173,6 +173,28 @@ class LLMChatClient(ABC):
             requests.exceptions.RequestException: If the request fails.
         """
         ...
+
+    def chat_stream(
+        self,
+        message: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+    ) -> Generator[str, None, None]:
+        """Stream a chat response from the LLM, yielding incremental text chunks.
+
+        This is a non-abstract method with a default fallback that delegates
+        to ``chat`` and yields the full response as a single chunk. Subclasses
+        that support native streaming should override this.
+
+        Args:
+            message: The user message/prompt.
+            system_prompt: Optional system prompt to guide the LLM.
+            history: Optional chat history for conversation context.
+
+        Yields:
+            Incremental response text chunks from the LLM.
+        """
+        yield self.chat(message, system_prompt=system_prompt, history=history)
 
     @abstractmethod
     def health_check(self) -> bool:

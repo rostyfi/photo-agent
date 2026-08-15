@@ -24,7 +24,7 @@ from .health_settings import (
 )
 from .prompt_tester import register_prompt_tester_callbacks
 from .metadata_tester import register_metadata_tester_callbacks
-from .chat import register_chat_callback, register_clear_chat_callback, register_chat_endpoint_test_callback, register_chat_history_init_callback, register_chat_scroll_callback, register_chat_response_callback, register_chat_history_navigation_callback
+from .chat import register_chat_callback, register_clear_chat_callback, register_chat_endpoint_test_callback, register_chat_history_init_callback, register_chat_scroll_callback, register_chat_stream_callback, register_chat_history_navigation_callback
 from .mode_toggle import register_mode_toggle_callback, register_mode_visibility_callback, register_mode_sync_callback
 
 from .sql_explorer import register_sql_explorer_callback
@@ -41,6 +41,7 @@ from .viewer import (
     register_fullscreen_nav_callback,
     register_fullscreen_open_callback,
     register_fullscreen_find_similar_callback,
+    register_reveal_callbacks,
 )
 from .similarity import (
     register_find_similar_callback,
@@ -80,7 +81,7 @@ __all__ = [
     "register_chat_history_init_callback",
     "register_chat_history_navigation_callback",
     "register_chat_scroll_callback",
-    "register_chat_response_callback",
+    "register_chat_stream_callback",
     "register_sql_explorer_callback",
 
     "register_tag_cloud_load_callback",
@@ -93,6 +94,7 @@ __all__ = [
     "register_fullscreen_metadata_toggle_callback",
     "register_fullscreen_folder_change_callback",
     "register_fullscreen_find_similar_callback",
+    "register_reveal_callbacks",
     "register_find_similar_callback",
     "register_similarity_search_callback",
     "register_display_similar_photos_callback",
@@ -124,7 +126,7 @@ def register_callbacks(app, create_extractor_fn, processing_config, app_config: 
     register_prompt_tester_callbacks(app, create_extractor_fn, app_config)
     register_metadata_tester_callbacks(app)
     register_chat_callback(app, app_config)
-    register_chat_response_callback(app, app_config)
+    register_chat_stream_callback(app)
     register_clear_chat_callback(app)
     register_chat_endpoint_test_callback(app, app_config)
     register_chat_history_init_callback(app)
@@ -145,6 +147,7 @@ def register_callbacks(app, create_extractor_fn, processing_config, app_config: 
     register_fullscreen_metadata_toggle_callback(app)
     register_fullscreen_folder_change_callback(app)
     register_fullscreen_find_similar_callback(app)
+    register_reveal_callbacks(app)
     
     # Similarity search callbacks
     register_find_similar_callback(app)
@@ -169,9 +172,11 @@ def register_callbacks(app, create_extractor_fn, processing_config, app_config: 
                         var tag = active.tagName;
                         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
                     }
-                    // Full-screen modal takes priority for navigation keys
+                    // Full-screen modal takes priority for navigation keys.
+                    // #fullscreen-modal is the .modal-dialog; the .show class
+                    // toggles on its ancestor .modal, so check via closest().
                     var fsModal = document.getElementById('fullscreen-modal');
-                    var isFullscreen = fsModal && fsModal.classList.contains('show');
+                    var isFullscreen = fsModal && fsModal.closest('.modal.show') !== null;
                     if (e.key === 'ArrowLeft') {
                         e.preventDefault();
                         if (isFullscreen) {

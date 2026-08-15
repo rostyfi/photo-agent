@@ -11,7 +11,7 @@ allowing for extensibility without modifying this file.
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import requests
 
@@ -347,3 +347,112 @@ class ChatService:
                 model=model or "unknown",
                 response_type="error"
             )
+
+    # ------------------------------------------------------------------
+    # Streaming support
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _chat_response_to_events(result: ChatResponse) -> Generator[Dict[str, Any], None, None]:
+        """Convert a ChatResponse into SSE-style event dicts (non-streaming).
+
+        Used for direct tool commands and tool redirects: a single
+        ``done`` event carries the complete response payload.
+        """
+        yield {
+            "type": "done",
+            "response": result.response,
+            "model": result.model,
+            "sender": result.sender,
+            "status": result.status,
+            "response_type": result.response_type,
+        }
+
+    def process_message_stream(
+        self,
+        message: str,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        model: Optional[str] = None,
+        folder_path: Optional[str] = None,
+        history: Optional[list] = None,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Process a chat message with streaming, yielding event dicts.
+
+        Mirrors :meth:`process_message` but streams LLM tokens incrementally.
+        Direct tool commands and LLM-detected tool redirects produce a
+        single ``done`` event (no token streaming) since the tool result
+        is computed server-side.
+
+        Event types yielded:
+
+        - ``{"type": "token", "content": "..."}`` — incremental LLM text
+        - ``{"type": "done", "response": ..., "model": ..., ...}`` — final
+          result (response may differ from concatenated tokens when a
+          tool redirect occurred)
+        - ``{"type": "error", "message": "..."}`` — failure
+        """
+        message = message.strip()
+        if not message:
+            yield {"type": "error", "message": "Message is required"}
+            return
+
+        message_lower = message.lower().strip()
+        tool_commands = self._get_tool_commands()
+
+        # Direct tool commands: execute immediately (no streaming)
+        if message_lower in tool_commands or message_lower.startswith("/find "):
+            result = self.handle_tool_command(message_lower, folder_path)
+            yield from self._chat_response_to_events(result)
+            return
+
+        # Regular LLM message: stream tokens
+        try:
+            chat_client = self._ensure_chat_client()
+            effective_model = model or chat_client.model
+            system_prompt = self.get_system_prompt()
+
+            full_response = ""
+            for chunk in chat_client.chat_stream(
+                message, system_prompt=system_prompt, history=history
+            ):
+                full_response += chunk
+                yield {"type": "token", "content": chunk}
+
+            # Check whether the LLM's complete response is a tool command
+            cleaned_response = self._clean_response(full_response)
+            response_stripped = cleaned_response.strip()
+
+            is_tool_command = response_stripped in tool_commands
+            is_find_command = response_stripped.startswith("/find ") and folder_path
+
+            if is_tool_command or is_find_command:
+                result = self.handle_tool_command(response_stripped, folder_path)
+                result.model = effective_model
+                yield from self._chat_response_to_events(result)
+                return
+
+            # Regular LLM response — final event carries the cleaned text
+            yield {
+                "type": "done",
+                "response": cleaned_response,
+                "model": effective_model,
+                "sender": "assistant",
+                "status": "success",
+                "response_type": None,
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error("Chat stream request failed: %s", e)
+            yield {
+                "type": "error",
+                "message": f"Failed to connect to LLM: {str(e)}",
+                "model": model or "unknown",
+            }
+        except Exception as e:
+            logger.error("Chat stream error: %s", e, exc_info=True)
+            yield {
+                "type": "error",
+                "message": str(e),
+                "model": model or "unknown",
+            }

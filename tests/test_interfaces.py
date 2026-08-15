@@ -31,11 +31,11 @@ class TestInterfaces(unittest.TestCase):
 
     def test_base_photo_extractor_init_defaults(self):
         e = _MinimalExtractor()
-        self.assertEqual(e.host, "192.168.0.150")
+        self.assertEqual(e.host, "127.0.0.1")
         self.assertEqual(e.port, 11434)
         self.assertEqual(e.model, "gemma4:e2b-it-qat")
         self.assertEqual(e.timeout, 120)
-        self.assertEqual(e.base_url, "http://192.168.0.150:11434")
+        self.assertEqual(e.base_url, "http://127.0.0.1:11434")
         self.assertEqual(e.default_prompt, DEFAULT_PROMPT)
 
     def test_make_error_result_without_path(self):

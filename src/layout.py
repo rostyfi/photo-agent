@@ -20,6 +20,10 @@ from src.layout_components import (
     build_tools_section,
 )
 
+# Captured once at process start so the footer shows when the running
+# container booted. Lets users confirm their browser is on the latest build.
+_BUILD_STAMP = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 def create_layout(app_config: AppConfig):
     """Build the full Dash Bootstrap layout for the web UI.
@@ -126,11 +130,14 @@ def create_layout(app_config: AppConfig):
             html.Div(id="keyboard-dummy", style={"display": "none"}),
             html.Div(id="scroll-dummy", style={"display": "none"}),
             html.Div(id="chat-nav-dummy", style={"display": "none"}),
+            html.Div(id="reveal-dummy", style={"display": "none"}),
 
             # Footer
             html.Footer(
                 html.P(
-                    f"Local Photo Agent · {datetime.now().year}",
+                    [
+                        f"Local Photo Agent · {datetime.now().year} · build {_BUILD_STAMP}",
+                    ],
                     className="text-center text-muted mb-0",
                 )
             ),

@@ -51,6 +51,7 @@ def _parent_dir(p: str) -> str:
 
 def main():
     """CLI entry point for single-image, multi-image, and recursive folder processing."""
+    config.validate()
     parser = argparse.ArgumentParser(description="Extract features from photos using a vision model")
     parser.add_argument("path", nargs="+", help="Path(s) to image file(s) or folder(s)")
     parser.add_argument("--host", default=config.llm_host, help="LLM server host")

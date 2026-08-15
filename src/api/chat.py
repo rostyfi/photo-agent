@@ -4,8 +4,9 @@ This module provides a thin wrapper around the ChatService that handles
 Flask request/response conversion, keeping the endpoint logic clean.
 """
 
+import json
 import logging
-from flask import request
+from flask import request, Response, stream_with_context
 
 from src.services.chat import ChatService
 from src.services.chat_response import ChatResponse
@@ -78,3 +79,59 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
             "message": str(e),
             "model": config.llm_model
         }, 500
+
+
+def api_chat_stream_handler(config: AppConfig, chat_service: ChatService):
+    """Handler for the /_api/chat/stream SSE endpoint.
+
+    Streams chat responses to the browser as Server-Sent Events. Each event
+    is a JSON object on a ``data:`` line:
+
+    - ``{"type": "token", "content": "..."}`` — incremental LLM text chunk
+    - ``{"type": "done", "response": ..., "model": ..., ...}`` — final result
+    - ``{"type": "error", "message": "..."}`` — failure
+
+    Args:
+        config: AppConfig instance for default values.
+        chat_service: ChatService instance for message processing.
+
+    Returns:
+        A Flask ``Response`` with ``text/event-stream`` mimetype.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return {"status": "error", "message": "No JSON payload provided"}, 400
+
+    message = data.get("message", "")
+    host = data.get("host", config.llm_host)
+    port = data.get("port", config.llm_port)
+    model = data.get("model", config.llm_model)
+    folder_path = data.get("folder")
+    history = data.get("history", [])
+
+    if not message or not message.strip():
+        return {"status": "error", "message": "Message is required"}, 400
+
+    def generate():
+        try:
+            for event in chat_service.process_message_stream(
+                message=message,
+                host=host,
+                port=port,
+                model=model,
+                folder_path=folder_path,
+                history=history,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.error("Chat stream error: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -17,6 +17,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback_context, html
 
 from src.vector_search.availability import is_vector_search_available
+from src.sqlite_utils import open_connection
 from .common import _get_app_config, _get_extractor
 
 logger = logging.getLogger(__name__)
@@ -707,10 +708,8 @@ def register_vector_db_check_callback(app):
         try:
             from src.sidecar.database import FeaturesDatabase
             import os
-            import sqlite3
-            
             db_path = FeaturesDatabase.default_db_path(folder)
-            
+
             # Check if database exists
             if not os.path.exists(db_path):
                 return dbc.Alert(
@@ -718,9 +717,9 @@ def register_vector_db_check_callback(app):
                     color="warning",
                     dismissable=True,
                 )
-            
+
             # Read from image_embeddings table
-            conn = sqlite3.connect(str(db_path))
+            conn = open_connection(db_path)
             try:
                 rows = conn.execute(
                     "SELECT image_path, model_name, embedding_dimension, created_at FROM image_embeddings ORDER BY created_at DESC"

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Set, List, Optional, Dict
 
 from src.constants import STATUS_COMPLETED, STATUS_FAILED
+from src.sqlite_utils import open_connection
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,7 @@ class SimpleProcessingTracker:
     def _get_connection(self) -> sqlite3.Connection:
         """Get a cached connection or create a new one."""
         if self._connection is None:
-            self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(str(self._db_path), check_same_thread=False)
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            try:
-                self._connection.execute("PRAGMA journal_mode = WAL")
-            except sqlite3.Error:
-                logger.warning("Could not set WAL journal mode on %s", self._db_path)
+            self._connection = open_connection(self._db_path)
             # Ensure schema on first connection
             if not self._schema_ensured:
                 self._ensure_schema_with_conn(self._connection)

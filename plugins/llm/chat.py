@@ -4,8 +4,9 @@ This module provides OllamaChatClient which implements LLMChatClient
 for text-based chat with Ollama models.
 """
 
+import json
 import logging
-from typing import Optional
+from typing import Generator, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -136,6 +137,78 @@ class OllamaChatClient(LLMChatClient):
             ) from e
         
         return result.get("response", "")
+
+    def chat_stream(
+        self,
+        message: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+    ) -> Generator[str, None, None]:
+        """Stream a chat response from Ollama, yielding text chunks.
+
+        Uses the /api/generate endpoint with stream=True so that tokens
+        arrive incrementally as they are produced by the model.
+
+        Args:
+            message: The user message/prompt.
+            system_prompt: Optional system prompt to guide the LLM.
+            history: Optional chat history for conversation context.
+
+        Yields:
+            Incremental response text chunks from the model.
+
+        Raises:
+            requests.exceptions.RequestException: If the request fails.
+        """
+        url = f"{self.base_url}/api/generate"
+
+        # Build the full prompt with history context (same logic as chat())
+        if history and len(history) > 0:
+            context_messages = []
+            for entry in history:
+                sender = entry.get("sender", "")
+                content = entry.get("content", "")
+                entry_type = entry.get("type", "text")
+
+                if entry_type == "photos":
+                    photo_paths = entry.get("photo_paths", [])
+                    count = entry.get("count", len(photo_paths))
+                    context_messages.append(f"{sender}: Found {count} matching photos")
+                elif entry_type == "error":
+                    context_messages.append(f"{sender}: Error - {content}")
+                else:
+                    context_messages.append(f"{sender}: {content}")
+
+            full_prompt = "\n".join(context_messages) + "\nuser: " + message
+        else:
+            full_prompt = message
+
+        payload = {
+            "model": self.model,
+            "prompt": full_prompt,
+            "stream": True,
+        }
+
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        logger.debug("Streaming chat request to %s with model '%s'", url, self.model)
+
+        response = self._session.post(url, json=payload, timeout=self.timeout, stream=True)
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            token = chunk.get("response")
+            if token:
+                yield token
+            if chunk.get("done"):
+                break
 
     def health_check(self) -> bool:
         """Check if the Ollama server is reachable."""

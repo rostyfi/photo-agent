@@ -30,7 +30,7 @@ class TestOllamaEmbeddingGenerator:
     def test_init_defaults(self):
         """Test default initialization."""
         generator = OllamaEmbeddingGenerator()
-        assert generator.host == "192.168.0.150"
+        assert generator.host == "127.0.0.1"
         assert generator.port == 11434
         assert generator.model == DEFAULT_EMBEDDING_MODEL
         assert generator.timeout == 120

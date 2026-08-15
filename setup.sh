@@ -52,6 +52,8 @@ services:
   photo-agent:
     volumes:
       - "${ABS_FOLDER}:/photos"
+    environment:
+      - LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=${ABS_FOLDER}
 EOF
 
     echo "Mounting host folder: $ABS_FOLDER -> /photos"

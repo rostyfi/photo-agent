@@ -149,96 +149,225 @@ def register_chat_callback(app, app_config: Optional[Any] = None):
         return "", updated_history, pending_data
 
 
-def register_chat_response_callback(app, app_config: Optional[Any] = None):
-    """Register callback to process pending chat requests and get responses from API."""
-    
-    @app.callback(
-        Output("chat-pending-request", "data"),
-        Output("chat-history-store", "data", allow_duplicate=True),
-        Output("photo-list-store", "data", allow_duplicate=True),
+def register_chat_stream_callback(app):
+    """Register a clientside callback that streams chat responses via SSE.
+
+    This replaces the blocking server-side callback with a browser-side
+    fetch to the /_api/chat/stream SSE endpoint. Tokens are appended to
+    the chat window incrementally as they arrive from the LLM. When the
+    stream completes, dash_clientside.set_props updates the history and
+    photo-list stores so that init_chat_history re-renders the final
+    formatted message.
+    """
+    app.clientside_callback(
+        """
+        function(pendingData, historyData) {
+            if (!pendingData || !pendingData.message) {
+                return dash_clientside.no_update;
+            }
+
+            var history = historyData || [];
+            var loadingIndex = -1;
+            for (var i = history.length - 1; i >= 0; i--) {
+                var entry = history[i];
+                if (entry && entry.type === 'loading' && entry.sender === 'assistant') {
+                    loadingIndex = i;
+                    break;
+                }
+            }
+            if (loadingIndex === -1) {
+                return null;
+            }
+
+            // Abort any previous in-flight stream
+            if (window._chatStreamController) {
+                try { window._chatStreamController.abort(); } catch(e) {}
+                window._chatStreamController = null;
+            }
+
+            // Build request payload
+            var payload = {
+                message: pendingData.message,
+                history: pendingData.chat_history || []
+            };
+            if (pendingData.host) payload.host = pendingData.host;
+            if (pendingData.port) payload.port = pendingData.port;
+            if (pendingData.model) payload.model = pendingData.model;
+            if (pendingData.folder) payload.folder = pendingData.folder;
+
+            // Find the loading spinner in the DOM and replace with streaming text
+            var chatResponseEl = document.getElementById('chat-response');
+            var spinner = chatResponseEl ? chatResponseEl.querySelector('.spinner-chat') : null;
+            var streamDiv = null;
+            var textSpan = null;
+
+            if (spinner && spinner.parentElement) {
+                streamDiv = document.createElement('div');
+                streamDiv.style.textAlign = 'left';
+                streamDiv.style.marginBottom = '10px';
+                streamDiv.style.whiteSpace = 'pre-wrap';
+
+                var label = document.createElement('strong');
+                label.textContent = 'Local Photo Agent: ';
+                streamDiv.appendChild(label);
+
+                textSpan = document.createElement('span');
+                textSpan.className = 'chat-streaming-text';
+                streamDiv.appendChild(textSpan);
+
+                var cursor = document.createElement('span');
+                cursor.className = 'chat-streaming-cursor';
+                cursor.textContent = '\\u25AE';
+                streamDiv.appendChild(cursor);
+
+                spinner.parentElement.replaceChild(streamDiv, spinner);
+            }
+
+            function scrollChat() {
+                var container = document.getElementById('chat-response-container');
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+
+            function updateStreamText(text) {
+                if (textSpan) {
+                    textSpan.textContent = text;
+                    scrollChat();
+                }
+            }
+
+            function removeCursor() {
+                if (streamDiv) {
+                    var c = streamDiv.querySelector('.chat-streaming-cursor');
+                    if (c) c.remove();
+                }
+            }
+
+            function finalizeHistory(entry, photoStoreData) {
+                var newHistory = history.slice();
+                newHistory[loadingIndex] = entry;
+                dash_clientside.set_props('chat-history-store', {data: newHistory});
+                if (photoStoreData) {
+                    dash_clientside.set_props('photo-list-store', {data: photoStoreData});
+                }
+            }
+
+            var fullText = '';
+            var model = pendingData.model || 'unknown';
+            var finalResponse = null;
+            var responseType = null;
+            var sender = 'assistant';
+
+            var controller = new AbortController();
+            window._chatStreamController = controller;
+
+            fetch('/_api/chat/stream', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            }).then(function(response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                var reader = response.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+
+                function pump() {
+                    return reader.read().then(function(result) {
+                        if (result.done) {
+                            return;
+                        }
+                        buffer += decoder.decode(result.value, {stream: true});
+                        var parts = buffer.split('\\n');
+                        buffer = parts.pop();
+                        for (var i = 0; i < parts.length; i++) {
+                            var line = parts[i].trim();
+                            if (line.substring(0, 6) === 'data: ') {
+                                try {
+                                    var evt = JSON.parse(line.substring(6));
+                                    if (evt.type === 'token') {
+                                        fullText += evt.content;
+                                        updateStreamText(fullText);
+                                    } else if (evt.type === 'done') {
+                                        model = evt.model || model;
+                                        responseType = evt.response_type || responseType;
+                                        sender = evt.sender || sender;
+                                        finalResponse = evt.response;
+                                    } else if (evt.type === 'error') {
+                                        fullText = '';
+                                        finalResponse = evt.message || 'Error';
+                                        responseType = 'error';
+                                        updateStreamText(finalResponse);
+                                    }
+                                } catch(e) { /* partial JSON, skip */ }
+                            }
+                        }
+                        return pump();
+                    });
+                }
+
+                return pump();
+            }).then(function() {
+                window._chatStreamController = null;
+                removeCursor();
+
+                var entry;
+                var photoStoreData = null;
+
+                if (responseType === 'photos' && finalResponse && typeof finalResponse === 'object') {
+                    var photoList = finalResponse.photos || [];
+                    var count = finalResponse.count || photoList.length;
+                    entry = {sender: sender, type: 'photos', photo_paths: photoList, count: count};
+                    var paths = [];
+                    for (var i = 0; i < photoList.length; i++) {
+                        if (typeof photoList[i] === 'object') {
+                            paths.push(photoList[i].path || '');
+                        } else {
+                            paths.push(photoList[i]);
+                        }
+                    }
+                    photoStoreData = {paths: paths, index: null};
+                } else {
+                    var textContent = (finalResponse !== null && finalResponse !== undefined) ? finalResponse : fullText;
+                    if (typeof textContent === 'object') {
+                        textContent = JSON.stringify(textContent);
+                    }
+                    entry = {
+                        sender: sender,
+                        content: textContent || 'No response',
+                        type: responseType === 'error' ? 'error' : 'text',
+                        model: model
+                    };
+                }
+
+                finalizeHistory(entry, photoStoreData);
+            }).catch(function(err) {
+                window._chatStreamController = null;
+                if (err && err.name === 'AbortError') {
+                    return;
+                }
+                removeCursor();
+                var errMsg = 'Error: ' + (err && err.message ? err.message : 'Connection failed');
+                if (textSpan) {
+                    textSpan.textContent = errMsg;
+                }
+                finalizeHistory(
+                    {sender: 'assistant', content: errMsg, type: 'error'},
+                    null
+                );
+            });
+
+            // Return null to clear the pending request immediately;
+            // the history store is updated via set_props when streaming completes.
+            return null;
+        }
+        """,
+        Output("chat-pending-request", "data", allow_duplicate=True),
         Input("chat-pending-request", "data"),
         State("chat-history-store", "data"),
         prevent_initial_call=True,
     )
-    def process_pending_request(pending_data: Optional[dict], 
-                                chat_history: Optional[list]):
-        """Process a pending chat request by calling the API and updating history."""
-        
-        if pending_data is None or not pending_data:
-            return dash.no_update, dash.no_update, dash.no_update
-        
-        if chat_history is None:
-            chat_history = []
-        
-        loading_index = -1
-        for i in range(len(chat_history) - 1, -1, -1):
-            entry = chat_history[i]
-            if entry.get("type") == "loading" and entry.get("sender") == "assistant":
-                loading_index = i
-                break
-        
-        if loading_index == -1:
-            return None, chat_history, dash.no_update
-        
-        result = _call_chat_endpoint(
-            message=pending_data.get("message", ""),
-            ollama_host=pending_data.get("host"),
-            ollama_port=pending_data.get("port"),
-            ollama_model=pending_data.get("model"),
-            folder=pending_data.get("folder"),
-            app_config=app_config,
-            chat_history=pending_data.get("chat_history", []),
-        )
-        
-        chat_store_data = None
-        
-        if result.get("status") == "success":
-            response_data = result.get("response", "")
-            model_name = result.get('model', 'unknown')
-            sender = result.get('sender', 'assistant')
-            response_type = result.get('response_type')
-            
-            if response_type == "photos" and isinstance(response_data, dict):
-                from urllib.parse import quote
-                photo_list = response_data.get("photos", [])
-                count = response_data.get("count", len(photo_list))
-                
-                assistant_message_entry = {
-                    "sender": sender,
-                    "type": "photos",
-                    "photo_paths": photo_list,
-                    "count": count
-                }
-                
-                photo_paths_only = []
-                for photo_item in photo_list:
-                    if isinstance(photo_item, dict):
-                        photo_paths_only.append(photo_item.get("path", ""))
-                    else:
-                        photo_paths_only.append(photo_item)
-                chat_store_data = {"paths": photo_paths_only, "index": None}
-                
-            else:
-                assistant_message_entry = {
-                    "sender": sender,
-                    "content": response_data,
-                    "type": "text",
-                    "model": model_name
-                }
-            
-            updated_history = chat_history[:loading_index] + [assistant_message_entry] + chat_history[loading_index + 1:]
-            return None, updated_history, chat_store_data
-            
-        else:
-            error_msg = result.get("message") or "No response from chat service"
-            error_message_entry = {
-                "sender": "assistant",
-                "content": error_msg,
-                "type": "error"
-            }
-            
-            updated_history = chat_history[:loading_index] + [error_message_entry] + chat_history[loading_index + 1:]
-            return None, updated_history, dash.no_update
 
 
 def register_clear_chat_callback(app):

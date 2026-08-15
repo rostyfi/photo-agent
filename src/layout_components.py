@@ -647,11 +647,118 @@ def build_detail_modal():
 
 
 def build_fullscreen_modal():
-    """Build the Fullscreen photo viewer modal."""
+    """Build the Fullscreen photo viewer modal.
+
+    The navigation/control buttons live in the static layout (as siblings of
+    the dynamic ``fullscreen-modal-body``) so Dash always attaches their
+    callback handlers. Only the image and metadata overlay are injected
+    dynamically by ``build_fullscreen_viewer``.
+    """
     return dbc.Modal(
         dbc.ModalBody(
-            html.Div(id="fullscreen-modal-body"),
+            [
+                html.Div(
+                    id="fullscreen-modal-body",
+                    style={
+                        "height": "100%",
+                        "width": "100%",
+                    },
+                ),
+                dbc.Button(
+                    "\u2715",
+                    id="btn-close-fullscreen",
+                    style={
+                        "position": "absolute",
+                        "top": "20px",
+                        "right": "20px",
+                        "zIndex": "1100",
+                        "fontSize": "24px",
+                        "color": "white",
+                        "background": "rgba(0,0,0,0.5)",
+                        "border": "none",
+                        "borderRadius": "50%",
+                        "width": "50px",
+                        "height": "50px",
+                        "cursor": "pointer",
+                    },
+                ),
+                dbc.Button(
+                    "\u2190",
+                    id="btn-prev-fullscreen",
+                    style={
+                        "position": "absolute",
+                        "left": "20px",
+                        "top": "50%",
+                        "transform": "translateY(-50%)",
+                        "zIndex": "1000",
+                        "fontSize": "36px",
+                        "color": "white",
+                        "background": "rgba(0,0,0,0.3)",
+                        "border": "none",
+                        "borderRadius": "50%",
+                        "width": "60px",
+                        "height": "60px",
+                        "cursor": "pointer",
+                    },
+                ),
+                dbc.Button(
+                    "\u2192",
+                    id="btn-next-fullscreen",
+                    style={
+                        "position": "absolute",
+                        "right": "20px",
+                        "top": "50%",
+                        "transform": "translateY(-50%)",
+                        "zIndex": "1000",
+                        "fontSize": "36px",
+                        "color": "white",
+                        "background": "rgba(0,0,0,0.3)",
+                        "border": "none",
+                        "borderRadius": "50%",
+                        "width": "60px",
+                        "height": "60px",
+                        "cursor": "pointer",
+                    },
+                ),
+                dbc.Button(
+                    "Find Similar",
+                    id="btn-find-similar-fullscreen",
+                    color="primary",
+                    size="sm",
+                    style={
+                        "position": "absolute",
+                        "bottom": "20px",
+                        "right": "160px",
+                        "zIndex": "1100",
+                    },
+                ),
+                dbc.Button(
+                    "Copy Path",
+                    id="btn-reveal-fullscreen",
+                    color="secondary",
+                    size="sm",
+                    style={
+                        "position": "absolute",
+                        "bottom": "20px",
+                        "left": "20px",
+                        "zIndex": "1100",
+                    },
+                ),
+                dbc.Button(
+                    "Toggle Info",
+                    id="btn-toggle-metadata-fullscreen",
+                    color="secondary",
+                    size="sm",
+                    style={
+                        "position": "absolute",
+                        "bottom": "20px",
+                        "right": "20px",
+                        "zIndex": "1100",
+                    },
+                ),
+            ],
             style={
+                "position": "relative",
                 "padding": "0",
                 "backgroundColor": "black",
                 "height": "100vh",

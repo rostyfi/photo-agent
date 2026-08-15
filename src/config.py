@@ -71,19 +71,57 @@ def _validate_positive(timeout_var: str, timeout: int, label: str):
 
 
 @dataclass
-class ProcessingConfig:
-    """Immutable configuration for an LLM processing run.
+class EmbeddingConfig:
+    """Embedding/similarity configuration shared by AppConfig and ProcessingConfig.
+
+    Single source of truth for the embedding-related fields (toggle, model,
+    backend) and similarity search defaults. ``AppConfig`` and
+    ``ProcessingConfig`` inherit from this class so the fields, defaults, and
+    validation are declared exactly once and the flat ``config.embedding_*``
+    access pattern is preserved.
+
+    Note: callers are responsible for calling ``load_dotenv()`` before
+    ``from_env()`` so environment variables are populated.
+    """
+
+    embedding_enabled: bool = True
+    embedding_model: str = "nomic-embed-text"
+    embedding_backend: str = "ollama"
+    similarity_limit: int = 10
+    similarity_metric: str = "cosine"
+
+    @classmethod
+    def from_env(cls) -> "EmbeddingConfig":
+        """Build embedding configuration from environment variables."""
+        return cls(
+            embedding_enabled=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
+            embedding_model=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
+            embedding_backend=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
+            similarity_limit=_safe_int("LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
+            similarity_metric=os.getenv("LOCAL_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
+        )
+
+    def validate(self):
+        """Validate embedding model and similarity settings.
+
+        Raises ValueError with a clear message on invalid configuration.
+        """
+        if self.similarity_limit <= 0:
+            raise ValueError(f"Similarity limit must be positive, got {self.similarity_limit}")
+        if self.similarity_metric not in ("cosine",):
+            raise ValueError(f"Similarity metric must be 'cosine', got {self.similarity_metric}")
+        if not self.embedding_model:
+            raise ValueError("Embedding model must not be empty")
+
+
+@dataclass
+class ProcessingConfig(EmbeddingConfig):
+    """Configuration for an LLM processing run.
 
     Captures the backend name, connection details, model tag, timeout, and
-    default prompt used by the coordinator and image processor.
-    
-    Embedding configuration:
-    - embedding_enabled: Generate vector embeddings for images (default: True)
-    - embedding_model: Model to use for embeddings (default: nomic-embed-text)
-    - embedding_backend: Backend for embeddings (default: ollama)
-    - similarity_limit: Number of similar results to return (default: 10)
-    - similarity_metric: Similarity metric to use (default: cosine)
-    
+    default prompt used by the coordinator and image processor. Embedding
+    and similarity fields are inherited from :class:`EmbeddingConfig`.
+
     Requirements:
     - Vector search library (HARD REQUIREMENT) for vector search
     - Ollama v0.1.0+ for embedding generation
@@ -95,13 +133,6 @@ class ProcessingConfig:
     model: str = DEFAULT_LLM_MODEL
     timeout: int = 600
     default_prompt: str = DEFAULT_PROMPT
-    
-    # Embedding configuration
-    embedding_enabled: bool = True
-    embedding_model: str = "nomic-embed-text"
-    embedding_backend: str = "ollama"
-    similarity_limit: int = 10
-    similarity_metric: str = "cosine"
 
     @classmethod
     def from_env(cls) -> "ProcessingConfig":
@@ -109,7 +140,7 @@ class ProcessingConfig:
 
         Prefers ``LOCAL_PHOTO_AGENT_LLM_*`` variables, falling back to
         ``LOCAL_PHOTO_AGENT_OLLAMA_*`` for backward compatibility.
-        
+
         Embedding configuration uses:
         - LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED
         - LOCAL_PHOTO_AGENT_EMBEDDING_MODEL
@@ -119,6 +150,7 @@ class ProcessingConfig:
         """
         load_dotenv()
         _warn_deprecated("LLM", "OLLAMA")
+        emb = EmbeddingConfig.from_env()
         return cls(
             backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
             host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
@@ -126,11 +158,11 @@ class ProcessingConfig:
             model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
             default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
-            embedding_enabled=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
-            embedding_model=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
-            embedding_backend=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
-            similarity_limit=_safe_int("LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
-            similarity_metric=os.getenv("LOCAL_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
+            embedding_enabled=emb.embedding_enabled,
+            embedding_model=emb.embedding_model,
+            embedding_backend=emb.embedding_backend,
+            similarity_limit=emb.similarity_limit,
+            similarity_metric=emb.similarity_metric,
         )
 
     def validate(self):
@@ -141,31 +173,18 @@ class ProcessingConfig:
         _validate_host("LOCAL_PHOTO_AGENT_LLM_HOST", self.host, "LLM host")
         _validate_port_range("LOCAL_PHOTO_AGENT_LLM_PORT", self.port, "LLM port")
         _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
-        
-        # Validate embedding configuration
-        if self.similarity_limit <= 0:
-            raise ValueError(f"Similarity limit must be positive, got {self.similarity_limit}")
-        if self.similarity_metric not in ("cosine",):
-            raise ValueError(f"Similarity metric must be 'cosine', got {self.similarity_metric}")
-        if not self.embedding_model:
-            raise ValueError("Embedding model must not be empty")
+        super().validate()
 
 
 @dataclass
-class AppConfig:
+class AppConfig(EmbeddingConfig):
     """Master configuration for the entire application (CLI + Dash web UI).
 
     Holds LLM connection details, Dash server settings, default prompt, and
     processing tracker settings.  All values can be overridden
     via environment variables with the ``LOCAL_PHOTO_AGENT_`` prefix.
-    
-    Embedding configuration:
-    - embedding_enabled: Generate vector embeddings (default: True)
-    - embedding_model: Model for embeddings (default: nomic-embed-text)
-    - embedding_backend: Backend for embeddings (default: ollama)
-    - similarity_limit: Number of similar results (default: 10)
-    - similarity_metric: Similarity metric (default: cosine)
-    
+    Embedding and similarity fields are inherited from :class:`EmbeddingConfig`.
+
     Requirements:
     - Vector search library (HARD REQUIREMENT) for vector search
     - Ollama v0.1.0+ for embedding generation
@@ -183,13 +202,11 @@ class AppConfig:
     folder_path: str = "/photos"
     recursive: bool = True
     dry_run: bool = False
-
-    # Embedding configuration
-    embedding_enabled: bool = True
-    embedding_model: str = "nomic-embed-text"
-    embedding_backend: str = "ollama"
-    similarity_limit: int = 10
-    similarity_metric: str = "cosine"
+    # Optional mapping from server/container paths to host paths for the
+    # "Copy Path" feature. Newline- or semicolon-separated list of
+    # ``container_prefix=host_prefix`` entries. Empty by default, which returns
+    # the server-side path as-is (correct when the app runs on the host).
+    reveal_map: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -198,20 +215,21 @@ class AppConfig:
         Reads ``.env`` via python-dotenv, then respects both the newer
         ``LOCAL_PHOTO_AGENT_LLM_*`` and legacy ``LOCAL_PHOTO_AGENT_OLLAMA_*``
         variable families.
-        
+
         Embedding configuration uses:
         - LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED
         - LOCAL_PHOTO_AGENT_EMBEDDING_MODEL
         - LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND
         - LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT
         - LOCAL_PHOTO_AGENT_SIMILARITY_METRIC
-        
+
         Requirements:
         - Vector search library (HARD REQUIREMENT) for vector search
         - Ollama v0.1.0+ for embedding generation
         """
         load_dotenv()
         _warn_deprecated("LLM", "OLLAMA")
+        emb = EmbeddingConfig.from_env()
         return cls(
             llm_host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
             llm_port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
@@ -225,11 +243,12 @@ class AppConfig:
             folder_path=os.getenv("LOCAL_PHOTO_AGENT_FOLDER", "/photos"),
             recursive=os.getenv("LOCAL_PHOTO_AGENT_RECURSIVE", "true").lower() in ("1", "true", "yes"),
             dry_run=os.getenv("LOCAL_PHOTO_AGENT_DRY_RUN", "false").lower() in ("1", "true", "yes"),
-            embedding_enabled=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_ENABLED", "true").lower() in ("1", "true", "yes"),
-            embedding_model=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_MODEL", "nomic-embed-text"),
-            embedding_backend=os.getenv("LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND", "ollama"),
-            similarity_limit=_safe_int("LOCAL_PHOTO_AGENT_SIMILARITY_LIMIT", 10),
-            similarity_metric=os.getenv("LOCAL_PHOTO_AGENT_SIMILARITY_METRIC", "cosine"),
+            reveal_map=os.getenv("LOCAL_PHOTO_AGENT_REVEAL_MAP", ""),
+            embedding_enabled=emb.embedding_enabled,
+            embedding_model=emb.embedding_model,
+            embedding_backend=emb.embedding_backend,
+            similarity_limit=emb.similarity_limit,
+            similarity_metric=emb.similarity_metric,
         )
 
     def validate(self):
@@ -242,14 +261,7 @@ class AppConfig:
         _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
         _validate_host("LOCAL_PHOTO_AGENT_DASH_HOST", self.dash_host, "Dash host")
         _validate_port_range("LOCAL_PHOTO_AGENT_DASH_PORT", self.dash_port, "Dash port")
-        
-        # Validate embedding configuration
-        if self.similarity_limit <= 0:
-            raise ValueError(f"Similarity limit must be positive, got {self.similarity_limit}")
-        if self.similarity_metric not in ("cosine",):
-            raise ValueError(f"Similarity metric must be 'cosine', got {self.similarity_metric}")
-        if not self.embedding_model:
-            raise ValueError("Embedding model must not be empty")
+        super().validate()
 
     def to_processing_config(self) -> ProcessingConfig:
         """Derive a ProcessingConfig snapshot from this AppConfig."""

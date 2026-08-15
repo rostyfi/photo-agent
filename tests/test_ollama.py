@@ -21,7 +21,7 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
 
     def test_init_defaults(self):
         e = OllamaPhotoExtractor()
-        self.assertEqual(e.host, "192.168.0.150")
+        self.assertEqual(e.host, "127.0.0.1")
         self.assertEqual(e.port, 11434)
         self.assertEqual(e.model, "gemma4:e2b-it-qat")
         self.assertEqual(e.timeout, 120)

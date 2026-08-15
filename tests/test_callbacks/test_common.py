@@ -35,7 +35,7 @@ class TestGetExtractor(unittest.TestCase):
         # Test that _get_extractor creates an extractor with default values
         # We'll use create_extractor directly since we no longer use ExtractorProvider
         ext = _get_extractor("", "", "", "", "", "test prompt")
-        self.assertEqual(ext.base_url, "http://192.168.0.150:11434")
+        self.assertEqual(ext.base_url, "http://127.0.0.1:11434")
         self.assertEqual(ext.model, "gemma4:e2b-it-qat")
 
     def test_uses_provided_values(self):

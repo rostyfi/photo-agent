@@ -113,7 +113,7 @@ class TestProcessingConfig(unittest.TestCase):
     def test_default_values(self):
         cfg = ProcessingConfig()
         self.assertEqual(cfg.backend, "ollama")
-        self.assertEqual(cfg.host, "192.168.0.150")
+        self.assertEqual(cfg.host, "127.0.0.1")
         self.assertEqual(cfg.port, 11434)
         self.assertEqual(cfg.model, "gemma4:e2b-it-qat")
         self.assertEqual(cfg.timeout, 600)
@@ -157,7 +157,7 @@ class TestProcessingConfig(unittest.TestCase):
 class TestAppConfig(unittest.TestCase):
     def test_default_values(self):
         cfg = AppConfig()
-        self.assertEqual(cfg.llm_host, "192.168.0.150")
+        self.assertEqual(cfg.llm_host, "127.0.0.1")
         self.assertEqual(cfg.llm_port, 11434)
         self.assertEqual(cfg.dash_host, "127.0.0.1")
         self.assertEqual(cfg.dash_port, 8050)

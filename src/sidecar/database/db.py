@@ -27,6 +27,7 @@ from typing import Any, Union, List, Tuple, Optional, Dict, Generator
 
 from src.constants import VEC_REQUIRED
 from src.sidecar.store import AbstractSidecarStore
+from src.sqlite_utils import open_connection
 
 logger = logging.getLogger(__name__)
 
@@ -164,58 +165,26 @@ class FeaturesDatabase:
     @contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Get a database connection as a context manager.
-        
+
         This ensures proper connection lifecycle management (opening, setup, closing).
-        
+
         Yields:
             An open SQLite connection with WAL mode, foreign keys, and extension loading enabled.
         """
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        conn = open_connection(self.db_path, enable_extensions=True)
         try:
-            conn.execute("PRAGMA foreign_keys = ON")
-            try:
-                conn.execute("PRAGMA journal_mode = WAL")
-            except sqlite3.Error:
-                logger.warning("Could not set WAL journal mode on %s", self.db_path)
-            # Enable loading extensions (required for vector search library)
-            try:
-                conn.enable_load_extension(True)
-                logger.debug("Extension loading enabled for connection")
-            except sqlite3.Error as e:
-                logger.debug("Could not enable extension loading: %s", e)
-            try:
-                conn.execute("PRAGMA recursive_triggers = ON")
-            except sqlite3.Error:
-                pass
             # Ensure schema exists
             self._ensure_schema(conn)
             yield conn
         finally:
             conn.close()
-    
+
     def _connect(self) -> sqlite3.Connection:
         """Open a new SQLite connection with WAL mode and thread safety.
-        
+
         Note: Prefer using get_connection() context manager for automatic cleanup.
         """
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        conn.execute("PRAGMA foreign_keys = ON")
-        try:
-            conn.execute("PRAGMA journal_mode = WAL")
-        except sqlite3.Error:
-            logger.warning("Could not set WAL journal mode on %s", self.db_path)
-        # Enable loading extensions (required for vector search library)
-        try:
-            conn.enable_load_extension(True)
-            logger.debug("Extension loading enabled for connection")
-        except sqlite3.Error as e:
-            logger.debug("Could not enable extension loading: %s", e)
-        try:
-            conn.execute("PRAGMA recursive_triggers = ON")
-        except sqlite3.Error:
-            pass
+        conn = open_connection(self.db_path, enable_extensions=True)
         # Ensure schema exists on first connection
         self._ensure_schema(conn)
         return conn
