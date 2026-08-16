@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
 from src.interfaces import DEFAULT_PROMPT
-from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST
 
 logger = logging.getLogger(__name__)
 
@@ -46,23 +46,19 @@ def _warn_deprecated(new_name: str, old_base: str):
         if os.getenv(old_var) is not None:
             logger.warning(
                 "Environment variable %s is deprecated, use %s instead",
-                old_var, f"LOCAL_PHOTO_AGENT_{new_name}{suffix}",
+                old_var,
+                f"LOCAL_PHOTO_AGENT_{new_name}{suffix}",
             )
 
 
 def _validate_port_range(port_var: str, port: int, label: str):
     if not (_MIN_PORT <= port <= _MAX_PORT):
-        raise ValueError(
-            f"Invalid {label}: {port}. Must be between {_MIN_PORT} and {_MAX_PORT} (env var: {port_var})"
-        )
+        raise ValueError(f"Invalid {label}: {port}. Must be between {_MIN_PORT} and {_MAX_PORT} (env var: {port_var})")
 
 
 def _validate_host(host_var: str, host: str, label: str):
     if not host or not host.strip():
         raise ValueError(f"{label} must not be empty (env var: {host_var})")
-
-
-
 
 
 def _validate_positive(timeout_var: str, timeout: int, label: str):
@@ -153,9 +149,11 @@ class ProcessingConfig(EmbeddingConfig):
         emb = EmbeddingConfig.from_env()
         return cls(
             backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
-            host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST")
+            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
             port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL")
+            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
             default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
             embedding_enabled=emb.embedding_enabled,
@@ -231,9 +229,11 @@ class AppConfig(EmbeddingConfig):
         _warn_deprecated("LLM", "OLLAMA")
         emb = EmbeddingConfig.from_env()
         return cls(
-            llm_host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            llm_host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST")
+            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
             llm_port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            llm_model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL") or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            llm_model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL")
+            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             llm_backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
             dash_host=os.getenv("LOCAL_PHOTO_AGENT_DASH_HOST", "127.0.0.1"),
             dash_port=_safe_int("LOCAL_PHOTO_AGENT_DASH_PORT", 8050),

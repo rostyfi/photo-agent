@@ -10,6 +10,14 @@ dist/
 build/
 .pytest_cache/
 
+# Static analysis & coverage
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+
 # Environment files (secrets)
 .env
 

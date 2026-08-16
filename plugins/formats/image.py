@@ -2,7 +2,6 @@ import logging
 import mimetypes
 from importlib import import_module
 from pathlib import Path
-from typing import Optional, Union
 
 from plugins.formats.registry import get_reader
 
@@ -19,8 +18,10 @@ def _ensure_plugins_loaded():
         return
     _readers_imported = True
 
-    import plugins.formats
     import pkgutil
+
+    import plugins.formats
+
     for _, name, is_pkg in pkgutil.iter_modules(plugins.formats.__path__, plugins.formats.__name__ + "."):
         if is_pkg:
             try:
@@ -29,7 +30,7 @@ def _ensure_plugins_loaded():
                 logger.warning("Failed to load format plugin %s", name, exc_info=True)
 
 
-def _detect_extension_by_magic(path: Path) -> Optional[str]:
+def _detect_extension_by_magic(path: Path) -> str | None:
     """Try to determine the image file extension from magic bytes in the header.
 
     Returns a lowercase extension (e.g. ``'.jpg'``) or None if unrecognised.
@@ -62,7 +63,7 @@ def _detect_extension_by_magic(path: Path) -> Optional[str]:
     return None
 
 
-def read_image_bytes(image_path: Union[str, Path]) -> bytes:
+def read_image_bytes(image_path: str | Path) -> bytes:
     """Read an image file into raw bytes, dispatching through the plugin registry.
 
     Falls back to raw binary read if the format is not recognised.

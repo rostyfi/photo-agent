@@ -12,9 +12,8 @@ The new simple approach:
 4. As each photo is processed, write details directly to the database
 """
 
-from pathlib import Path
-from typing import List, Optional, Set, Tuple, Dict
 import logging
+from pathlib import Path
 
 from src.sidecar.database import FeaturesDatabase
 from src.simple_processing_tracker import SimpleProcessingTracker
@@ -22,19 +21,19 @@ from src.simple_processing_tracker import SimpleProcessingTracker
 logger = logging.getLogger(__name__)
 
 # module-level cache: folder -> (cache_key, processed_set)
-_PROCESSED_SET_CACHE: Dict[str, Tuple[Tuple, Set[str]]] = {}
+_PROCESSED_SET_CACHE: dict[str, tuple[tuple, set[str]]] = {}
 
 
-def _db_cache_key(image_dir: str) -> Tuple:
+def _db_cache_key(image_dir: str) -> tuple:
     """Return a cache key that changes if any data source is created,
     deleted, or modified.
-    
+
     Note: In WAL mode, SQLite writes go to a separate -wal file, so we need
     to check both the main database file and the WAL file for changes.
     """
     key_parts = []
     db_path = FeaturesDatabase.default_db_path(image_dir)
-    
+
     # Check both possible paths (they should be the same, but check both for safety)
     paths_to_check = [
         db_path,
@@ -43,7 +42,7 @@ def _db_cache_key(image_dir: str) -> Tuple:
         Path(str(db_path) + "-wal"),
         Path(image_dir) / ".local-photo-agent" / "features.db-wal",
     ]
-    
+
     for p in paths_to_check:
         try:
             if p.exists():
@@ -64,7 +63,7 @@ def clear_processed_cache(image_dir: str) -> None:
 class PhotoList:
     """Handles discovery and listing of photos in specified folders."""
 
-    def __init__(self, recursive: bool = True, extensions: Set[str] = None):
+    def __init__(self, recursive: bool = True, extensions: set[str] | None = None):
         """Initialise the photo discovery helper.
 
         Args:
@@ -74,16 +73,24 @@ class PhotoList:
         """
         self.recursive = recursive
         self.extensions = extensions or {
-            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp",
-            ".tiff", ".tif", ".heic", ".heif"
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+            ".bmp",
+            ".tiff",
+            ".tif",
+            ".heic",
+            ".heif",
         }
 
     def list_photos(
         self,
-        paths: List[str],
-        limit: Optional[int] = None,
-        exclude_processed_from: Optional[str] = None,
-    ) -> List[str]:
+        paths: list[str],
+        limit: int | None = None,
+        exclude_processed_from: str | None = None,
+    ) -> list[str]:
         """
         Expand directories into image file paths.
 
@@ -98,11 +105,11 @@ class PhotoList:
         """
         images = []
         logger.info("Listing photos for paths: %s", paths)
-        
+
         for p in paths:
             path = Path(p).absolute()
             logger.info("Checking path: %s (Exists: %s, IsDir: %s)", path, path.exists(), path.is_dir())
-            
+
             if path.is_dir():
                 if self.recursive:
                     candidates = list(path.rglob("*"))
@@ -110,7 +117,7 @@ class PhotoList:
                 else:
                     candidates = list(path.iterdir())
                     logger.info("Found %s total candidates in %s (non-recursive)", len(candidates), path)
-                
+
                 for child in candidates:
                     if child.is_file() and child.suffix.lower() in self.extensions:
                         images.append(str(child))
@@ -150,7 +157,7 @@ class PhotoList:
         if cached is not None and cached[0] == current_key:
             return cached[1]
 
-        processed: Set[str] = set()
+        processed: set[str] = set()
 
         # Use simple processing tracker
         try:
@@ -159,7 +166,7 @@ class PhotoList:
             logger.debug("Loaded %s processed images from simple tracker", len(processed))
         except Exception as e:
             logger.warning("Failed to read processing tracker for %s: %s", image_dir, e)
-            
+
             # Fallback: try to read from features.db directly
             db_path = FeaturesDatabase.default_db_path(image_dir)
             if db_path.exists():
@@ -167,10 +174,7 @@ class PhotoList:
                     db = FeaturesDatabase(db_path)
                     extractions = db.list_extractions()
                     db.close()
-                    processed = {
-                        ex["image_path"] for ex in extractions
-                        if ex.get("image_path")
-                    }
+                    processed = {ex["image_path"] for ex in extractions if ex.get("image_path")}
                     logger.debug("Loaded %s processed images from features.db fallback", len(processed))
                 except Exception:
                     logger.warning("Failed to read features DB for %s", image_dir, exc_info=True)

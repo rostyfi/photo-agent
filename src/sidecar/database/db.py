@@ -20,10 +20,11 @@ import json
 import logging
 import sqlite3
 import struct
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Union, List, Tuple, Optional, Dict, Generator
+from typing import Any
 
 from src.constants import VEC_REQUIRED
 from src.sidecar.store import AbstractSidecarStore
@@ -56,7 +57,7 @@ class FeaturesDatabase:
     - Vector search library is a HARD REQUIREMENT for vector search functionality
     - Vectors are stored as binary BLOBs for efficiency
     - Embeddings are NOT stored in sidecar JSON files (SQLite only)
-    
+
     Vector search operations are handled directly by FeaturesDatabase.
     """
 
@@ -64,97 +65,97 @@ class FeaturesDatabase:
     # Vector Utility Methods (Static)
     # These are simple utilities that don't require sqlite-vec
     # =========================================================================
-    
+
     @staticmethod
-    def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
         """Compute cosine similarity between two vectors.
-        
+
         Cosine similarity is the cosine of the angle between two vectors.
         Range: [-1, 1] where 1 = identical, 0 = orthogonal, -1 = opposite.
-        
+
         Args:
             vec1: First vector (list of floats)
             vec2: Second vector (list of floats)
-            
+
         Returns:
             Cosine similarity score in range [-1, 1]
-            
+
         Raises:
             ValueError: If vectors have different dimensions or are empty
         """
         import math
+
         if not vec1 or not vec2:
             raise ValueError("Vectors cannot be empty")
         if len(vec1) != len(vec2):
             raise ValueError(f"Vector dimension mismatch: {len(vec1)} vs {len(vec2)}")
-        
+
         # Dot product
-        dot_product = sum(a * b for a, b in zip(vec1, vec2))
-        
+        dot_product = sum(a * b for a, b in zip(vec1, vec2, strict=False))
+
         # Magnitudes
         mag1 = math.sqrt(sum(a * a for a in vec1))
         mag2 = math.sqrt(sum(b * b for b in vec2))
-        
+
         # Avoid division by zero
         if mag1 == 0 or mag2 == 0:
             return 0.0
-        
+
         similarity = dot_product / (mag1 * mag2)
-        
+
         # Clamp to valid range due to floating point precision
         similarity = max(-1.0, min(1.0, similarity))
-        
+
         return similarity
 
     @staticmethod
-    def vector_to_blob(vector: List[float]) -> bytes:
+    def vector_to_blob(vector: list[float]) -> bytes:
         """Convert a vector (list of floats) to binary BLOB format.
-        
+
         Each float is stored as 4 bytes (32-bit IEEE 754).
         This is compatible with sqlite-vec's raw bytes format.
-        
+
         Args:
             vector: List of floats representing the embedding vector.
-            
+
         Returns:
             Binary BLOB containing the vector data.
-            
+
         Raises:
             ValueError: If vector is empty.
         """
         if not vector:
             raise ValueError("Vector cannot be empty")
         return b"".join(struct.pack("!f", float(val)) for val in vector)
-    
+
     @staticmethod
-    def blob_to_vector(blob: bytes, dimension: int) -> List[float]:
+    def blob_to_vector(blob: bytes, dimension: int) -> list[float]:
         """Convert a binary BLOB back to a vector (list of floats).
-        
+
         Args:
             blob: Binary BLOB containing the vector data.
             dimension: Expected dimension of the vector.
-            
+
         Returns:
             List of floats representing the embedding vector.
-            
+
         Raises:
             ValueError: If BLOB size doesn't match expected dimension.
         """
         if len(blob) != dimension * 4:
             raise ValueError(
-                f"BLOB size {len(blob)} doesn't match expected dimension "
-                f"{dimension} (need {dimension * 4} bytes)"
+                f"BLOB size {len(blob)} doesn't match expected dimension {dimension} (need {dimension * 4} bytes)"
             )
-        return [struct.unpack("!f", blob[i:i+4])[0] for i in range(0, len(blob), 4)]
+        return [struct.unpack("!f", blob[i : i + 4])[0] for i in range(0, len(blob), 4)]
 
-    def __init__(self, db_path: Union[str, Path]):
+    def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self._conn: sqlite3.Connection | None = None
         self._fts5_available: bool = True
         self._vector_initialized: bool = False
 
     @staticmethod
-    def default_db_path(folder: Union[str, Path]) -> Path:
+    def default_db_path(folder: str | Path) -> Path:
         """Return the default features.db path for a given folder.
 
         The database is placed inside ``.local-photo-agent/`` to match the
@@ -203,9 +204,7 @@ class FeaturesDatabase:
             )
             """
         )
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_features_image_path ON raw_features(image_path)"
-        )
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_features_image_path ON raw_features(image_path)")
 
         conn.execute(
             """
@@ -232,9 +231,7 @@ class FeaturesDatabase:
             )
             """
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feature_tags_tag ON feature_tags(tag)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_feature_tags_tag ON feature_tags(tag)")
 
         if self._fts5_available is not False:
             try:
@@ -270,12 +267,8 @@ class FeaturesDatabase:
             )
             """
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_image_embeddings_path ON image_embeddings(image_path)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_image_embeddings_model ON image_embeddings(model_name)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_embeddings_path ON image_embeddings(image_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_embeddings_model ON image_embeddings(model_name)")
 
         # Create image_metadata table for storing image metadata (EXIF, etc.)
         conn.execute(
@@ -319,14 +312,12 @@ class FeaturesDatabase:
             )
             """
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_image_metadata_path ON image_metadata(image_path)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_path ON image_metadata(image_path)")
 
         conn.commit()
 
     @staticmethod
-    def _to_text(value) -> Optional[str]:
+    def _to_text(value) -> str | None:
         """Coerce a parsed field to a flat TEXT value."""
         if value is None:
             return None
@@ -345,8 +336,6 @@ class FeaturesDatabase:
         self._conn = self._connect()
         logger.info("Features database ready at %s", self.db_path)
         return self._conn
-    
-
 
     def init_vector_search(self) -> None:
         """Initialize vector search support.
@@ -366,8 +355,8 @@ class FeaturesDatabase:
         # Check if sqlite-vec is available
         if not self._check_sqlite_vec_available():
             raise RuntimeError(
-                f"Vector search library (sqlite-vec) is a HARD REQUIREMENT for vector search. "
-                f"Please install it with: pip install sqlite-vec"
+                "Vector search library (sqlite-vec) is a HARD REQUIREMENT for vector search. "
+                "Please install it with: pip install sqlite-vec"
             )
 
         with self.get_connection() as conn:
@@ -376,15 +365,16 @@ class FeaturesDatabase:
             # Create the virtual table
             self._create_vec_table(conn)
             self._vector_initialized = True
-    
+
     def _check_sqlite_vec_available(self) -> bool:
         """Check if sqlite-vec is installed."""
         try:
-            import sqlite_vec
+            import sqlite_vec  # noqa: F401
+
             return True
         except ImportError:
             return False
-    
+
     def _ensure_extension_loaded(self, conn: sqlite3.Connection) -> None:
         """Ensure the sqlite-vec extension is loaded on the connection."""
         try:
@@ -394,44 +384,44 @@ class FeaturesDatabase:
                 f"Vector search extension loading is not authorized: {e}. "
                 f"This usually means the SQLite library was not compiled with "
                 f"extension loading support."
-            )
-        
+            ) from e
+
         try:
             import sqlite_vec
+
             sqlite_vec.load(conn)
-        except Exception as e:
+        except Exception:
             # Try manual loading
             try:
                 import sqlite_vec
+
                 vec0_path = sqlite_vec.loadable_path()
-                if not vec0_path.endswith('.so'):
-                    vec0_path += '.so'
+                if not vec0_path.endswith(".so"):
+                    vec0_path += ".so"
                 if not Path(vec0_path).exists():
-                    vec0_path = Path(sqlite_vec.__file__).parent / 'vec0.so'
+                    vec0_path = Path(sqlite_vec.__file__).parent / "vec0.so"
                 conn.load_extension(str(vec0_path))
             except Exception as e2:
                 raise RuntimeError(
                     f"Failed to load vector search extension: {e2}. "
                     f"Vector search library (sqlite-vec) is a HARD REQUIREMENT."
-                )
-    
+                ) from e2
+
     def _create_vec_table(self, conn: sqlite3.Connection) -> None:
         """Create the vec_embeddings virtual table for sqlite-vec."""
         # Check if table already exists
-        result = conn.execute(
-            f"SELECT name FROM sqlite_master WHERE type='table' AND name='vec_embeddings'"
-        ).fetchone()
-        
+        result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_embeddings'").fetchone()
+
         if result:
             return
-        
+
         # Try to drop any existing table first for compatibility
         try:
             conn.execute("DROP TABLE IF EXISTS vec_embeddings")
             conn.commit()
         except (sqlite3.OperationalError, sqlite3.DatabaseError):
             pass
-        
+
         # Create vec0 virtual table
         try:
             conn.execute(
@@ -449,14 +439,14 @@ class FeaturesDatabase:
                 raise RuntimeError(
                     f"Failed to create vec_embeddings table: {e}. "
                     f"Vector search library (sqlite-vec) is a HARD REQUIREMENT."
-                )
-    
-    def _format_vector_for_vec(self, vector: List[float]) -> str:
+                ) from e
+
+    def _format_vector_for_vec(self, vector: list[float]) -> str:
         """Format a vector for sqlite-vec."""
         return "[" + ", ".join(f"{v:.15g}" for v in vector) + "]"
 
     @staticmethod
-    def _normalize_vector(vector: List[float]) -> List[float]:
+    def _normalize_vector(vector: list[float]) -> list[float]:
         """Pad or truncate a vector to ``VEC_TABLE_DIMENSION``.
 
         Cosine similarity is invariant to zero-padding, so padding shorter
@@ -473,19 +463,12 @@ class FeaturesDatabase:
             logger.warning("Truncating vector from %s to %s dimensions", len(vector), dim)
             return truncated
         return vector
-    
-    def save_to_vec_table(
-        self, 
-        conn: sqlite3.Connection, 
-        image_path: str, 
-        vector: List[float]
-    ) -> bool:
+
+    def save_to_vec_table(self, conn: sqlite3.Connection, image_path: str, vector: list[float]) -> bool:
         """Save a vector to the vec_embeddings virtual table."""
         # Check if table exists
-        result = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='vec_embeddings'"
-        ).fetchone()
-        
+        result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_embeddings'").fetchone()
+
         if not result:
             logger.warning("vec_embeddings table does not exist")
             return False
@@ -500,21 +483,17 @@ class FeaturesDatabase:
         vector_str = self._format_vector_for_vec(vector_padded)
 
         # Check if entry already exists (parameterized to avoid SQL injection)
-        existing = conn.execute(
-            "SELECT 1 FROM vec_embeddings WHERE image_path = ?", (image_path,)
-        ).fetchone()
+        existing = conn.execute("SELECT 1 FROM vec_embeddings WHERE image_path = ?", (image_path,)).fetchone()
 
         try:
             if existing:
                 conn.execute(
-                    "UPDATE vec_embeddings SET embedding = ? "
-                    "WHERE image_path = ?",
+                    "UPDATE vec_embeddings SET embedding = ? WHERE image_path = ?",
                     (vector_str, image_path),
                 )
             else:
                 conn.execute(
-                    "INSERT INTO vec_embeddings (image_path, embedding) "
-                    "VALUES (?, ?)",
+                    "INSERT INTO vec_embeddings (image_path, embedding) VALUES (?, ?)",
                     (image_path, vector_str),
                 )
             conn.commit()
@@ -522,36 +501,25 @@ class FeaturesDatabase:
         except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
             logger.warning("Failed to save to vec_embeddings for %s: %s", image_path, e)
             return False
-    
-    def delete_from_vec_table(
-        self, 
-        conn: sqlite3.Connection, 
-        image_path: str
-    ) -> bool:
+
+    def delete_from_vec_table(self, conn: sqlite3.Connection, image_path: str) -> bool:
         """Delete a vector from the vec_embeddings virtual table."""
         try:
-            conn.execute(
-                "DELETE FROM vec_embeddings WHERE image_path = ?", (image_path,)
-            )
+            conn.execute("DELETE FROM vec_embeddings WHERE image_path = ?", (image_path,))
             conn.commit()
             return True
         except sqlite3.OperationalError as e:
             logger.error("Failed to delete from vec_embeddings for %s: %s", image_path, e)
             return False
-    
-    def get_from_vec_table(
-        self, 
-        conn: sqlite3.Connection, 
-        image_path: str, 
-        dimension: int
-    ) -> Optional[List[float]]:
+
+    def get_from_vec_table(self, conn: sqlite3.Connection, image_path: str, dimension: int) -> list[float] | None:
         """Retrieve a vector from the vec_embeddings virtual table."""
         try:
             row = conn.execute(
                 "SELECT embedding FROM vec_embeddings WHERE image_path = ?",
                 (image_path,),
             ).fetchone()
-            
+
             if row and row[0]:
                 blob = row[0]
                 return self.blob_to_vector(blob, dimension)
@@ -559,13 +527,10 @@ class FeaturesDatabase:
         except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
             logger.error("Failed to get embedding from vec_embeddings for %s: %s", image_path, e)
             return None
-    
+
     def vec_find_similar(
-        self, 
-        conn: sqlite3.Connection, 
-        query_vector: List[float], 
-        limit: int = 10
-    ) -> List[Tuple[str, float]]:
+        self, conn: sqlite3.Connection, query_vector: list[float], limit: int = 10
+    ) -> list[tuple[str, float]]:
         """Find images similar to the query vector using sqlite-vec."""
         if not query_vector:
             raise ValueError("Query vector cannot be empty")
@@ -574,7 +539,7 @@ class FeaturesDatabase:
         # matches the dimension of the stored (padded) vectors.
         query_vector = self._normalize_vector(query_vector)
         vector_str = self._format_vector_for_vec(query_vector)
-        
+
         try:
             cursor = conn.execute(
                 """
@@ -586,16 +551,16 @@ class FeaturesDatabase:
                 """,
                 (vector_str, limit),
             )
-            
+
             results = []
             for row in cursor.fetchall():
                 image_path = row[0]
                 similarity = max(0.0, min(1.0, float(row[1])))
                 results.append((image_path, similarity))
-            
+
             return results
         except sqlite3.OperationalError as e:
-            raise RuntimeError(f"Vector search failed: {e}")
+            raise RuntimeError(f"Vector search failed: {e}") from e
 
     def _check_vec_available(self) -> None:
         """Check if vector search library (sqlite-vec) is available.
@@ -605,11 +570,10 @@ class FeaturesDatabase:
         """
         if not self._check_sqlite_vec_available():
             raise RuntimeError(
-                f"{VEC_REQUIRED} but is not available. "
-                f"Vector search operations will not work without it."
+                f"{VEC_REQUIRED} but is not available. Vector search operations will not work without it."
             )
 
-    def save_extraction(self, image_path: str, result: Dict) -> None:
+    def save_extraction(self, image_path: str, result: dict) -> None:
         """Upsert an extraction result into ``raw_features`` and normalised tables.
 
         Serialises the full ``result`` dict into ``model_output``, updates the
@@ -686,24 +650,31 @@ class FeaturesDatabase:
                 ).fetchone()
                 if row:
                     rowid = row[0]
-                    try:
+                    with suppress(sqlite3.DatabaseError):
                         conn.execute(
                             "INSERT INTO extracted_features_fts (extracted_features_fts, rowid) VALUES ('delete', ?)",
                             (rowid,),
                         )
-                    except sqlite3.DatabaseError:
-                        pass
                     conn.execute(
                         """
                         INSERT INTO extracted_features_fts (rowid, description, subjects, objects, colors, setting, mood, tags)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (rowid, description or "", subjects or "", objects or "", colors or "", setting or "", mood or "", tags_str),
+                        (
+                            rowid,
+                            description or "",
+                            subjects or "",
+                            objects or "",
+                            colors or "",
+                            setting or "",
+                            mood or "",
+                            tags_str,
+                        ),
                     )
 
             conn.commit()
 
-    def get_extraction(self, image_path: str) -> Optional[Dict]:
+    def get_extraction(self, image_path: str) -> dict | None:
         """Read a single row by ``image_path`` and deserialise ``model_output``."""
         if not self.db_path.exists():
             return None
@@ -727,7 +698,7 @@ class FeaturesDatabase:
             ).fetchone()
             return row is not None
 
-    def list_extractions(self) -> List[Dict]:
+    def list_extractions(self) -> list[dict]:
         """Return all rows, deserialising ``model_output`` back to dicts."""
         if not self.db_path.exists():
             return []
@@ -735,7 +706,7 @@ class FeaturesDatabase:
             rows = conn.execute("SELECT model_output FROM raw_features").fetchall()
             return [json.loads(r[0]) for r in rows if r[0]]
 
-    def execute_query(self, sql: str) -> Tuple[List[str], List[Tuple]]:
+    def execute_query(self, sql: str) -> tuple[list[str], list[tuple]]:
         """Execute a read-only SQL query and return column names plus rows.
 
         Raises:
@@ -754,7 +725,7 @@ class FeaturesDatabase:
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             return columns, rows
 
-    def search_features(self, query: str, limit: int = 50) -> List[Dict]:
+    def search_features(self, query: str, limit: int = 50) -> list[dict]:
         """Full-text search over normalised feature columns and tags."""
         if not self.db_path.exists() or not self._fts5_available:
             return []
@@ -780,9 +751,9 @@ class FeaturesDatabase:
                 (query, limit),
             )
             columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
-    def get_features_by_tag(self, tag: str) -> List[Dict]:
+    def get_features_by_tag(self, tag: str) -> list[dict]:
         """Return normalised features for images that have a given tag."""
         if not self.db_path.exists():
             return []
@@ -807,9 +778,9 @@ class FeaturesDatabase:
                 (tag,),
             )
             columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
-    def get_features_by_tags(self, tags: List[str]) -> List[Dict]:
+    def get_features_by_tags(self, tags: list[str]) -> list[dict]:
         """Return normalised features for images that have ALL of the given tags.
 
         Uses an intersection query with ``HAVING COUNT(DISTINCT tag) = N``
@@ -843,9 +814,9 @@ class FeaturesDatabase:
                 (*lower_tags, len(tags)),
             )
             columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
-    def list_tag_frequencies(self, limit: int = 100) -> List[Tuple[str, int]]:
+    def list_tag_frequencies(self, limit: int = 100) -> list[tuple[str, int]]:
         """Return tag names with occurrence counts, ordered by frequency desc."""
         if not self.db_path.exists():
             return []
@@ -862,7 +833,7 @@ class FeaturesDatabase:
             ).fetchall()
             return [(row[0], row[1]) for row in rows if row[0]]
 
-    def list_tag_frequencies_restricted(self, selected_tags: List[str], limit: int = 100) -> List[Tuple[str, int]]:
+    def list_tag_frequencies_restricted(self, selected_tags: list[str], limit: int = 100) -> list[tuple[str, int]]:
         """Return tag frequencies for tags that co-occur with ALL selected tags.
 
         Returns only tags from photos that contain every tag in
@@ -899,17 +870,15 @@ class FeaturesDatabase:
             ).fetchall()
             return [(row[0], row[1]) for row in rows if row[0]]
 
-    def list_all_tags(self) -> List[str]:
+    def list_all_tags(self) -> list[str]:
         """Return all distinct tags in the database, sorted case-insensitively."""
         if not self.db_path.exists():
             return []
         with self.get_connection() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT tag FROM feature_tags ORDER BY tag COLLATE NOCASE"
-            ).fetchall()
+            rows = conn.execute("SELECT DISTINCT tag FROM feature_tags ORDER BY tag COLLATE NOCASE").fetchall()
             return [row[0] for row in rows if row[0]]
 
-    def get_feature_summary(self, image_path: str) -> Optional[Dict]:
+    def get_feature_summary(self, image_path: str) -> dict | None:
         """Return a joined view of raw and normalised data for a single image."""
         if not self.db_path.exists():
             return None
@@ -939,9 +908,7 @@ class FeaturesDatabase:
                 return None
             tags = [
                 r[0]
-                for r in conn.execute(
-                    "SELECT tag FROM feature_tags WHERE image_path = ?", (image_path,)
-                ).fetchall()
+                for r in conn.execute("SELECT tag FROM feature_tags WHERE image_path = ?", (image_path,)).fetchall()
             ]
             result = {
                 "image_path": row[0],
@@ -957,7 +924,7 @@ class FeaturesDatabase:
                 "mood": row[10],
                 "tags": tags,
             }
-            
+
             # Include metadata if available
             logger.debug("About to query metadata for %s in %s", image_path, self.db_path)
             metadata = self.get_metadata(image_path)
@@ -969,28 +936,31 @@ class FeaturesDatabase:
                 logger.warning("No metadata in DB for %s, trying on-the-fly extraction", image_path)
                 try:
                     from src.metadata import extract_metadata_dict
+
                     fallback_metadata = extract_metadata_dict(image_path)
                     if fallback_metadata:
-                        logger.info("Fallback: Extracted metadata on-the-fly for %s (keys: %s)", 
-                                   image_path, list(fallback_metadata.keys()))
+                        logger.info(
+                            "Fallback: Extracted metadata on-the-fly for %s (keys: %s)",
+                            image_path,
+                            list(fallback_metadata.keys()),
+                        )
                         result["metadata"] = fallback_metadata
                         # Also save it to database for future use
                         try:
                             self.save_metadata(image_path, fallback_metadata)
                             logger.info("Fallback: Saved on-the-fly metadata to DB for %s", image_path)
                         except Exception as e:
-                            logger.error("Fallback: Failed to save on-the-fly metadata for %s: %s", 
-                                       image_path, e)
+                            logger.error("Fallback: Failed to save on-the-fly metadata for %s: %s", image_path, e)
                     else:
                         logger.warning("No metadata found for %s (neither in DB nor extracted)", image_path)
                 except Exception as e:
                     logger.error("Failed to extract fallback metadata for %s: %s", image_path, e, exc_info=True)
-            
+
             return result
 
-    def save_metadata(self, image_path: str, metadata: Dict) -> None:
+    def save_metadata(self, image_path: str, metadata: dict) -> None:
         """Save image metadata to the database.
-        
+
         Args:
             image_path: Path to the image.
             metadata: Dictionary containing metadata (from src.metadata.extract_metadata_dict).
@@ -998,33 +968,60 @@ class FeaturesDatabase:
         if not metadata:
             logger.debug("Not saving metadata: metadata dict is empty")
             return
-            
+
         try:
             with self.get_connection() as conn:
                 updated_at = datetime.now(timezone.utc).isoformat()
-                
+
                 # Prepare all metadata fields
                 fields = [
-                    "image_path", "file_name", "file_size_bytes", "file_extension",
-                    "width", "height", "aspect_ratio", "make", "model", "camera_serial",
-                    "lens_make", "lens_model", "exposure_time", "f_number", "iso_speed",
-                    "focal_length", "focal_length_35mm", "aperture_value", "date_taken",
-                    "date_created", "date_modified", "latitude", "longitude", "altitude",
-                    "gps_precision", "location_name", "color_space", "bits_per_sample",
-                    "orientation", "software", "copyright", "artist", "image_description",
-                    "title", "updated_at"
+                    "image_path",
+                    "file_name",
+                    "file_size_bytes",
+                    "file_extension",
+                    "width",
+                    "height",
+                    "aspect_ratio",
+                    "make",
+                    "model",
+                    "camera_serial",
+                    "lens_make",
+                    "lens_model",
+                    "exposure_time",
+                    "f_number",
+                    "iso_speed",
+                    "focal_length",
+                    "focal_length_35mm",
+                    "aperture_value",
+                    "date_taken",
+                    "date_created",
+                    "date_modified",
+                    "latitude",
+                    "longitude",
+                    "altitude",
+                    "gps_precision",
+                    "location_name",
+                    "color_space",
+                    "bits_per_sample",
+                    "orientation",
+                    "software",
+                    "copyright",
+                    "artist",
+                    "image_description",
+                    "title",
+                    "updated_at",
                 ]
-                
+
                 # Build placeholders
                 placeholders = ", ".join(["?"] * len(fields))
-                
+
                 # Convert all values to SQLite-compatible types (handle IFDRational, etc.)
                 def _convert_value(val: Any) -> Any:
                     """Convert special types to SQLite-compatible types."""
                     if val is None:
                         return None
                     # Handle IFDRational from Pillow EXIF
-                    if hasattr(val, 'numerator') and hasattr(val, 'denominator'):
+                    if hasattr(val, "numerator") and hasattr(val, "denominator"):
                         try:
                             return float(val.numerator) / float(val.denominator)
                         except (ValueError, ZeroDivisionError, TypeError):
@@ -1038,24 +1035,24 @@ class FeaturesDatabase:
                     # Handle bytes
                     if isinstance(val, bytes):
                         try:
-                            return val.decode('utf-8', errors='ignore')
+                            return val.decode("utf-8", errors="ignore")
                         except (UnicodeDecodeError, AttributeError):
                             return str(val)
                     # For lists, convert to comma-separated string
                     if isinstance(val, list):
                         return ", ".join(str(v) for v in val if v is not None)
                     return val
-                
-                values = [_convert_value(metadata.get(field, None)) for field in fields]
+
+                values = [_convert_value(metadata.get(field)) for field in fields]
                 values[-1] = updated_at  # Set updated_at
                 values[0] = image_path  # Ensure image_path is set
-                
+
                 # Build SET clause for ON CONFLICT
                 set_clause = ", ".join([f"{field} = excluded.{field}" for field in fields if field != "image_path"])
-                
+
                 conn.execute(
                     f"""
-                    INSERT INTO image_metadata ({', '.join(fields)})
+                    INSERT INTO image_metadata ({", ".join(fields)})
                     VALUES ({placeholders})
                     ON CONFLICT(image_path) DO UPDATE SET {set_clause}
                     """,
@@ -1067,19 +1064,19 @@ class FeaturesDatabase:
             logger.error("Failed to save metadata for %s: %s", image_path, e, exc_info=True)
             raise
 
-    def get_metadata(self, image_path: str) -> Optional[Dict]:
+    def get_metadata(self, image_path: str) -> dict | None:
         """Retrieve metadata for a specific image.
-        
+
         Args:
             image_path: Path to the image.
-            
+
         Returns:
             Dictionary containing all metadata fields, or None if not found.
         """
         if not self.db_path.exists():
             logger.debug("Database does not exist at %s", self.db_path)
             return None
-            
+
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute(
@@ -1087,41 +1084,41 @@ class FeaturesDatabase:
                     (image_path,),
                 )
                 row = cursor.fetchone()
-                
+
                 if not row:
                     logger.debug("No metadata row found for %s in %s", image_path, self.db_path)
                     return None
-                
+
                 # Get column names
                 columns = [desc[0] for desc in cursor.description]
-                result = dict(zip(columns, row))
+                result = dict(zip(columns, row, strict=False))
                 logger.debug("Retrieved metadata for %s (keys: %s)", image_path, list(result.keys()))
                 return result
         except Exception as e:
             logger.error("Failed to get metadata for %s: %s", image_path, e, exc_info=True)
             return None
 
-    def get_metadata_for_display(self, image_path: str) -> Dict[str, str]:
+    def get_metadata_for_display(self, image_path: str) -> dict[str, str]:
         """Get metadata formatted for display.
-        
+
         Args:
             image_path: Path to the image.
-            
+
         Returns:
             Dictionary with formatted metadata suitable for UI display.
         """
         from src.metadata import ImageMetadata, format_metadata_for_display
-        
+
         raw_metadata = self.get_metadata(image_path)
         if not raw_metadata:
             return {}
-        
+
         # Convert to ImageMetadata object
         metadata_obj = ImageMetadata()
         for key, value in raw_metadata.items():
             if hasattr(metadata_obj, key):
                 setattr(metadata_obj, key, value)
-        
+
         return format_metadata_for_display(metadata_obj)
 
     def rebuild_fts_index(self) -> None:
@@ -1132,7 +1129,7 @@ class FeaturesDatabase:
             conn.execute("INSERT INTO extracted_features_fts(extracted_features_fts) VALUES('rebuild')")
             conn.commit()
 
-    def save_embedding(self, image_path: str, model_name: str, vector: List[float]) -> None:
+    def save_embedding(self, image_path: str, model_name: str, vector: list[float]) -> None:
         """Save embedding to both metadata and vector index.
 
         Stores the embedding in both the image_embeddings table (for metadata)
@@ -1176,15 +1173,17 @@ class FeaturesDatabase:
                     # sqlite-vec library not available or vec_embeddings table doesn't exist
                     # but we still saved metadata to image_embeddings table
                     logger.warning(
-                        "Failed to save to %s for %s: %s. Metadata saved to image_embeddings.", TABLE_VEC_EMBEDDINGS,
-                        image_path, e
+                        "Failed to save to %s for %s: %s. Metadata saved to image_embeddings.",
+                        TABLE_VEC_EMBEDDINGS,
+                        image_path,
+                        e,
                     )
                     # Don't re-raise - metadata was already saved successfully
         except sqlite3.OperationalError as e:
             logger.error("Failed to save embedding for %s: %s", image_path, e)
-            raise RuntimeError(f"Failed to save embedding: {e}. {VEC_REQUIRED}")
+            raise RuntimeError(f"Failed to save embedding: {e}. {VEC_REQUIRED}") from e
 
-    def get_embedding(self, image_path: str, model_name: str) -> Optional[List[float]]:
+    def get_embedding(self, image_path: str, model_name: str) -> list[float] | None:
         """Retrieve embedding vector from metadata.
 
         Retrieves the embedding from the image_embeddings table where it's stored
@@ -1239,7 +1238,7 @@ class FeaturesDatabase:
             ).fetchone()
             return row is not None
 
-    def get_embedding_dimension(self, model_name: str) -> Optional[int]:
+    def get_embedding_dimension(self, model_name: str) -> int | None:
         """Get the embedding dimension for a given model.
 
         Args:
@@ -1278,7 +1277,7 @@ class FeaturesDatabase:
             conn.commit()
             logger.debug("Deleted embedding for %s (model: %s)", image_path, model_name)
 
-    def get_all_embeddings(self, model_name: str) -> List[Tuple[str, List[float]]]:
+    def get_all_embeddings(self, model_name: str) -> list[tuple[str, list[float]]]:
         """Retrieve all embeddings for a specific model.
 
         Args:
@@ -1286,7 +1285,7 @@ class FeaturesDatabase:
 
         Returns:
             List of (image_path, vector) tuples.
-            
+
         Note:
             This method reads embeddings from the image_embeddings table (metadata)
             and converts blobs to vectors. It does NOT require sqlite-vec.
@@ -1313,11 +1312,7 @@ class FeaturesDatabase:
 
             return results
 
-    def find_similar(
-        self,
-        query_vector: List[float],
-        limit: int = 10
-    ) -> List[Tuple[str, float]]:
+    def find_similar(self, query_vector: list[float], limit: int = 10) -> list[tuple[str, float]]:
         """Find images similar to the query vector using cosine similarity.
 
         Uses sqlite-vec to perform fast vector similarity search.
@@ -1345,6 +1340,7 @@ class FeaturesDatabase:
         except RuntimeError:
             # Vector search library not available, return empty results
             from src.constants import VEC_NOT_AVAILABLE
+
             logger.warning("%s. Returning empty results.", VEC_NOT_AVAILABLE)
             return []
 
@@ -1357,25 +1353,22 @@ class FeaturesDatabase:
             return self.vec_find_similar(conn, query_vector, limit=limit)
 
     def find_similar_rest(
-        self,
-        query_vector: List[float],
-        model_name: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Tuple[str, float]]:
+        self, query_vector: list[float], model_name: str | None = None, limit: int = 10
+    ) -> list[tuple[str, float]]:
         """Find images similar to the query vector using Python cosine similarity.
-        
+
         This is a fallback method that works without sqlite-vec.
         It loads all embeddings from the database and computes cosine similarity
         in Python. Slower than sqlite-vec for large datasets but always available.
-        
+
         Args:
             query_vector: The query embedding vector to search for.
             model_name: Optional filter by embedding model name.
             limit: Maximum number of results to return (default: 10).
-            
+
         Returns:
             List of (image_path, similarity_score) tuples, sorted by score DESC.
-            
+
         Raises:
             ValueError: If query_vector is empty or invalid.
         """
@@ -1383,17 +1376,17 @@ class FeaturesDatabase:
             raise ValueError("Query vector cannot be empty")
         if len(query_vector) == 0:
             raise ValueError("Query vector cannot be empty")
-        
+
         if not self.db_path.exists():
             return []
-        
+
         # Get all embeddings from database
         embeddings = self.get_all_embeddings(model_name) if model_name else []
-        
+
         if not embeddings:
             logger.warning("No embeddings found in database")
             return []
-        
+
         # Compute similarity for each embedding
         results = []
         for image_path, vector in embeddings:
@@ -1410,15 +1403,15 @@ class FeaturesDatabase:
                     similarity = self.cosine_similarity(q_vec, s_vec)
                 else:
                     similarity = self.cosine_similarity(query_vector, vector)
-                
+
                 results.append((image_path, similarity))
             except Exception as e:
                 logger.error("Failed to compute similarity for %s: %s", image_path, e)
                 continue
-        
+
         # Sort by similarity (descending) and take top-k
         results.sort(key=lambda x: x[1], reverse=True)
-        
+
         return results[:limit]
 
     def close(self) -> None:
@@ -1436,7 +1429,7 @@ class DatabaseSidecarStore(AbstractSidecarStore):
     """
 
     def __init__(self):
-        self._dbs: Dict[str, FeaturesDatabase] = {}
+        self._dbs: dict[str, FeaturesDatabase] = {}
 
     def _get_db(self, image_path: str) -> FeaturesDatabase:
         folder = str(Path(image_path).parent)
@@ -1450,7 +1443,7 @@ class DatabaseSidecarStore(AbstractSidecarStore):
         """Return the expected database path for a given image."""
         return FeaturesDatabase.default_db_path(Path(image_path).parent)
 
-    def save(self, image_path: str, result: Dict) -> str:
+    def save(self, image_path: str, result: dict) -> str:
         """Persist an extraction result dict to the folder's features.db.
 
         Returns:
@@ -1460,7 +1453,7 @@ class DatabaseSidecarStore(AbstractSidecarStore):
         db.save_extraction(image_path, result)
         return str(db.db_path)
 
-    def load(self, image_path: str) -> Optional[Dict]:
+    def load(self, image_path: str) -> dict | None:
         """Read an extraction result for the given image from the DB."""
         db = self._get_db(image_path)
         return db.get_extraction(image_path)

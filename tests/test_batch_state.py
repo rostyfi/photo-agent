@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.batch_state import write_batch_state, read_batch_state
+from src.batch_state import read_batch_state, write_batch_state
 
 
 class TestWriteBatchState(unittest.TestCase):
@@ -37,7 +37,10 @@ class TestWriteBatchState(unittest.TestCase):
 
     def test_extra_timing_stats_are_included(self):
         write_batch_state(
-            self.folder, "done", 50, 50,
+            self.folder,
+            "done",
+            50,
+            50,
             min_duration_ms=100.0,
             max_duration_ms=500.0,
             avg_duration_ms=250.0,
@@ -51,8 +54,7 @@ class TestWriteBatchState(unittest.TestCase):
     def test_atomic_write_prevents_partial_reads(self):
         write_batch_state(self.folder, "running", 10, 0)
 
-        write_batch_state(self.folder, "done", 10, 10,
-                          avg_duration_ms=123.0)
+        write_batch_state(self.folder, "done", 10, 10, avg_duration_ms=123.0)
 
         p = Path(self.folder) / ".local-photo-agent" / "batch_state.json"
         data = json.loads(p.read_text(encoding="utf-8"))

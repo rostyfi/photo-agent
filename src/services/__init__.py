@@ -12,6 +12,6 @@ from .chat import ChatService
 from .chat_response import ChatResponse
 
 __all__ = [
-    "ChatService",
     "ChatResponse",
+    "ChatService",
 ]

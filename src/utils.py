@@ -1,5 +1,4 @@
 import base64
-from typing import Dict, List
 
 from plugins.formats import read_image_bytes
 
@@ -10,7 +9,7 @@ def encode_image_file(image_path: str) -> str:
     return base64.b64encode(raw).decode("utf-8")
 
 
-def compute_duration_stats(durations: List[float]) -> Dict[str, float]:
+def compute_duration_stats(durations: list[float]) -> dict[str, float]:
     """Calculate min/max/avg/total duration statistics from a list of millisecond values.
 
     Args:

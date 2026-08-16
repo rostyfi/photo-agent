@@ -4,6 +4,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html
 
+import src.callbacks.viewer as _viewer
 from src.callbacks.viewer import (
     register_detail_modal_callback,
     register_fullscreen_close_callback,
@@ -13,7 +14,6 @@ from src.callbacks.viewer import (
     register_fullscreen_open_callback,
 )
 from tests.test_callbacks import find_callback, patch_callback_context
-import src.callbacks.viewer as _viewer
 
 
 class TestDetailModalCallback(unittest.TestCase):

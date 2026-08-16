@@ -21,7 +21,6 @@ import base64
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import requests
 
@@ -31,7 +30,7 @@ from src.embeddings.base import BaseEmbeddingGenerator
 logger = logging.getLogger(__name__)
 
 # Known model dimensions for validation
-KNOWN_MODEL_DIMENSIONS: Dict[str, int] = {
+KNOWN_MODEL_DIMENSIONS: dict[str, int] = {
     "clip-vit-base-patch32": 512,
     "clip-vit-base-patch16": 512,
     "all-minilm": 384,
@@ -49,10 +48,10 @@ MIN_OLLAMA_VERSION = "0.1.0"
 
 class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
     """Embedding generator using Ollama's /api/embeddings endpoint.
-    
+
     Requires Ollama v0.1.0+ for the embeddings API.
     Vector search library is a HARD REQUIREMENT for vector search operations.
-    
+
     Args:
         host: Ollama server hostname or IP.
         port: Ollama server port.
@@ -80,13 +79,12 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         self.base_url = f"http://{self.host}:{self.port}"
         # Reuse a single session for connection pooling across bulk requests
         self._session = requests.Session()
-        
+
         # Verify Ollama version requirement
         version_str = self._check_ollama_version()
         if version_str is None:
             logger.warning(
-                "Could not verify Ollama version. Embedding generation requires Ollama v%s+",
-                MIN_OLLAMA_VERSION
+                "Could not verify Ollama version. Embedding generation requires Ollama v%s+", MIN_OLLAMA_VERSION
             )
             self._ollama_version = None
         else:
@@ -100,14 +98,14 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                 )
 
     @staticmethod
-    def _parse_version(version_str: str) -> Tuple[int, ...]:
+    def _parse_version(version_str: str) -> tuple[int, ...]:
         """Parse a version string into a tuple of integers."""
         try:
             return tuple(int(x) for x in version_str.split("."))
         except (ValueError, AttributeError):
             return (0,)
 
-    def _check_ollama_version(self) -> Optional[str]:
+    def _check_ollama_version(self) -> str | None:
         """Check the Ollama server version via /api/version endpoint."""
         try:
             url = f"{self.base_url}/api/version"
@@ -121,7 +119,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             logger.debug("Could not check Ollama version: %s", e)
         return None
 
-    def _get_known_dimension(self, model_name: str) -> Optional[int]:
+    def _get_known_dimension(self, model_name: str) -> int | None:
         """Get the known dimension for a model name."""
         return KNOWN_MODEL_DIMENSIONS.get(model_name.lower())
 
@@ -131,22 +129,21 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         dim = self._get_known_dimension(model_name)
         if dim is not None:
             return dim
-        
+
         # Try to get dimension from Ollama (not all models support this)
         # For now, use a sensible default or raise an error
         logger.warning(
-            "Unknown embedding model '%s'. Using default dimension 512. "
-            "Consider adding it to KNOWN_MODEL_DIMENSIONS.",
-            model_name
+            "Unknown embedding model '%s'. Using default dimension 512. Consider adding it to KNOWN_MODEL_DIMENSIONS.",
+            model_name,
         )
         return 512
 
     def dimension(self, model_name: str) -> int:
         """Return the embedding dimension size for a given model.
-        
+
         Args:
             model_name: The embedding model identifier.
-            
+
         Returns:
             The dimension size (number of floats in the embedding vector).
         """
@@ -154,20 +151,20 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
 
     def model_name(self) -> str:
         """Return the model identifier for this generator.
-        
+
         Returns:
             The model name string.
         """
         return self.model
 
-    def _encode_image(self, image_path: Union[str, Path]) -> str:
+    def _encode_image(self, image_path: str | Path) -> str:
         """Read an image file and encode it as base64."""
         path = Path(image_path)
         try:
             with open(path, "rb") as f:
                 image_bytes = f.read()
             return base64.b64encode(image_bytes).decode("utf-8")
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.error("Failed to read image file %s: %s", image_path, e)
             raise
 
@@ -182,22 +179,24 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             # If decoding fails, assume it's already in the right format
             return image_b64
 
-    def _generate_embedding_request(self, image_b64: str, model: Optional[str] = None, prompt: Optional[str] = None) -> List[float]:
+    def _generate_embedding_request(
+        self, image_b64: str, model: str | None = None, prompt: str | None = None
+    ) -> list[float]:
         """Send a request to Ollama's /api/embeddings endpoint.
-        
+
         Args:
             image_b64: Base64-encoded image string.
             model: Optional model override.
-            
+
         Returns:
             List of floats representing the embedding vector.
-            
+
         Raises:
             RuntimeError: If embedding generation fails after all retries.
         """
         url = f"{self.base_url}/api/embeddings"
         use_model = model or self.model
-        
+
         payload = {
             "model": use_model,
         }
@@ -207,7 +206,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             payload["prompt"] = prompt
         else:
             payload["images"] = [image_b64]
-        
+
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -237,8 +236,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                             f"Check that the model '{use_model}' supports embedding generation."
                         )
                         logger.error(
-                            "Empty embeddings list in response from Ollama for model '%s': %s",
-                            use_model, data
+                            "Empty embeddings list in response from Ollama for model '%s': %s", use_model, data
                         )
                     elif embedding_single is not None:
                         # This is the single embedding format: {"embedding": [floats]}
@@ -253,10 +251,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                             f"For image embeddings, use a vision model like 'clip-vit-base-patch32' or 'nomic-embed-vision'. "
                             f"Or embed the extracted text description instead."
                         )
-                        logger.error(
-                            "Empty embeddings in response from Ollama for model '%s': %s",
-                            use_model, data
-                        )
+                        logger.error("Empty embeddings in response from Ollama for model '%s': %s", use_model, data)
                     else:
                         last_error = RuntimeError(
                             f"No embeddings in response from Ollama for model '{use_model}'. "
@@ -264,10 +259,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                             f"Vector search library is a HARD REQUIREMENT for vector search. "
                             f"Check that the model '{use_model}' supports embedding generation."
                         )
-                        logger.error(
-                            "No embeddings in response from Ollama for model '%s': %s",
-                            use_model, data
-                        )
+                        logger.error("No embeddings in response from Ollama for model '%s': %s", use_model, data)
 
                 elif response.status_code == 404:
                     # Endpoint not found - Ollama version too old
@@ -277,11 +269,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                         f"Vector search library is a HARD REQUIREMENT for vector search. "
                         f"Current Ollama version: {self._ollama_version or 'unknown'}"
                     )
-                    logger.error(
-                        "Ollama /api/embeddings endpoint not found. "
-                        "Requires Ollama v%s+",
-                        MIN_OLLAMA_VERSION
-                    )
+                    logger.error("Ollama /api/embeddings endpoint not found. Requires Ollama v%s+", MIN_OLLAMA_VERSION)
 
                 else:
                     last_error = RuntimeError(
@@ -291,9 +279,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                         f"Vector search library is a HARD REQUIREMENT for vector search."
                     )
                     logger.error(
-                        "Ollama embeddings request failed with status %d: %s",
-                        response.status_code,
-                        response.text[:200]
+                        "Ollama embeddings request failed with status %d: %s", response.status_code, response.text[:200]
                     )
 
             except requests.exceptions.Timeout as e:
@@ -303,10 +289,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                     f"Last error: {e}. "
                     f"Vector search library is a HARD REQUIREMENT for vector search."
                 )
-                logger.warning(
-                    "Timeout on embedding request (attempt %d/%d)",
-                    attempt + 1, self.max_retries + 1
-                )
+                logger.warning("Timeout on embedding request (attempt %d/%d)", attempt + 1, self.max_retries + 1)
 
             except requests.exceptions.RequestException as e:
                 last_error = RuntimeError(
@@ -316,8 +299,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                     f"Vector search library is a HARD REQUIREMENT for vector search."
                 )
                 logger.error(
-                    "Network error on embedding request (attempt %d/%d): %s",
-                    attempt + 1, self.max_retries + 1, e
+                    "Network error on embedding request (attempt %d/%d): %s", attempt + 1, self.max_retries + 1, e
                 )
 
             # Sleep before retrying. This single backoff point covers every
@@ -325,7 +307,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             # hammers the server when embeddings are empty or the endpoint
             # returns a non-200 status.
             if attempt < self.max_retries:
-                time.sleep(self.backoff_factor * (2 ** attempt))
+                time.sleep(self.backoff_factor * (2**attempt))
                 continue
 
         raise last_error or RuntimeError(
@@ -333,15 +315,15 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             f"Vector search library is a HARD REQUIREMENT for vector search."
         )
 
-    def generate(self, image_path: Union[str, Path]) -> List[float]:
+    def generate(self, image_path: str | Path) -> list[float]:
         """Generate embedding vector for an image file.
-        
+
         Args:
             image_path: Path to the image file.
-            
+
         Returns:
             List of floats representing the embedding vector.
-            
+
         Raises:
             RuntimeError: If embedding generation fails.
             IOError: If the image file cannot be read.
@@ -360,16 +342,16 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                 f"Vector search library is a HARD REQUIREMENT for vector search."
             ) from e
 
-    def generate_from_text(self, text: str, model: Optional[str] = None) -> List[float]:
+    def generate_from_text(self, text: str, model: str | None = None) -> list[float]:
         """Generate embedding vector from text.
-        
+
         Args:
             text: The text to embed.
             model: Optional model override.
-            
+
         Returns:
             List of floats representing the embedding vector.
-            
+
         Raises:
             RuntimeError: If embedding generation fails.
         """
@@ -385,15 +367,15 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                 f"Vector search library is a HARD REQUIREMENT for vector search."
             ) from e
 
-    def generate_b64(self, image_b64: str) -> List[float]:
+    def generate_b64(self, image_b64: str) -> list[float]:
         """Generate embedding vector from a base64-encoded image.
-        
+
         Args:
             image_b64: Base64-encoded image string.
-            
+
         Returns:
             List of floats representing the embedding vector.
-            
+
         Raises:
             RuntimeError: If embedding generation fails.
         """
@@ -413,7 +395,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
 
     def health_check(self) -> bool:
         """Check if the Ollama server is reachable and supports embeddings.
-        
+
         Returns:
             True if the server is reachable and supports embeddings, False otherwise.
         """
@@ -423,15 +405,15 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             response = self._session.get(url, timeout=10)
             if response.status_code != 200:
                 return False
-            
+
             # Check if embeddings endpoint exists
             url = f"{self.base_url}/api/embeddings"
-            
+
             # Determine if this is a text or vision model
             # Text embedding models (like nomic-embed-text) require "prompt" parameter
             # Vision embedding models (like clip-vit-base-patch32) require "images" parameter
             is_text_model = self.model.lower() in ["nomic-embed-text", "all-minilm"]
-            
+
             try:
                 if is_text_model:
                     # For text models, use a test prompt
@@ -447,26 +429,25 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
                         json={"model": self.model, "images": [""]},
                         timeout=10,
                     )
-                
+
                 # 400 is OK - it means the endpoint exists but the request was bad
                 # 404 means the endpoint doesn't exist (old Ollama version)
                 if response.status_code == 404:
                     logger.warning(
-                        "Ollama server is running but /api/embeddings endpoint not found. "
-                        "Requires Ollama v%s+",
-                        MIN_OLLAMA_VERSION
+                        "Ollama server is running but /api/embeddings endpoint not found. Requires Ollama v%s+",
+                        MIN_OLLAMA_VERSION,
                     )
                     return False
                 return True
             except requests.exceptions.RequestException:
                 return False
-                
+
         except requests.exceptions.RequestException:
             return False
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List available embedding models from the Ollama server.
-        
+
         Returns:
             List of model names that support embedding generation.
         """

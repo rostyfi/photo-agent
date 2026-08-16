@@ -1,0 +1,88 @@
+[project]
+name = "local-photo-agent"
+version = "0.1.0"
+description = "Extract structured features, descriptions, and metadata from photos using Ollama vision models."
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    ".docker-pi",
+    ".pi",
+    ".local-photo-agent",
+    "plan",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Curated set: baseline style + imports + modernize + likely bugs + simplifications.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line length is enforced by the formatter; keep config lenient on existing code
+    "B008",   # function calls in defaults (used intentionally for DI/defaults)
+    "RUF001", # ambiguous unicode (× multiplication sign is intentional in dimension strings like "1920 × 1080")
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "E402",  # module-level imports after non-imports (test fixtures)
+    "F401",  # unused imports (pytest fixtures, mock helpers)
+    "F841",  # unused variables
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "plugins"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["src", "plugins"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "setup.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+# Gradual typing: do not fail on missing annotations yet; revisit as coverage grows.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+files = ["src", "plugins", "main.py", "app.py"]

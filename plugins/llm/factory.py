@@ -3,7 +3,6 @@ from importlib import import_module
 from plugins.llm.registry import get_backend, list_backends
 from src.interfaces import BasePhotoExtractor
 
-
 _backends_loaded = False
 
 
@@ -14,14 +13,17 @@ def _ensure_backends_loaded():
         return
     _backends_loaded = True
 
-    import plugins.llm.backends
     import pkgutil
+
+    import plugins.llm.backends
+
     for _, name, is_pkg in pkgutil.iter_modules(plugins.llm.backends.__path__, plugins.llm.backends.__name__ + "."):
         if is_pkg:
             try:
                 import_module(name)
             except Exception:
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning("Failed to load LLM backend %s", name, exc_info=True)
 

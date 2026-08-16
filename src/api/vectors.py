@@ -8,11 +8,12 @@ Endpoints:
 
 import logging
 import sqlite3
+from contextlib import suppress
 
 from flask import Blueprint, request
 
 from src.config import AppConfig
-from src.sidecar.database.db import FeaturesDatabase, TABLE_VEC_EMBEDDINGS
+from src.sidecar.database.db import TABLE_VEC_EMBEDDINGS, FeaturesDatabase
 from src.sqlite_utils import open_connection
 from src.vector_search.availability import is_vector_search_available
 
@@ -62,11 +63,9 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
         db = FeaturesDatabase(db_path)
 
         try:
-            try:
+            # DB schema already exists; safe to continue.
+            with suppress(sqlite3.OperationalError):
                 db.init_db()
-            except sqlite3.OperationalError:
-                # DB schema already exists; safe to continue.
-                pass
 
             vec_available = is_vector_search_available()
             logger.info("Vector search available: %s", vec_available)
@@ -98,7 +97,8 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 retrievable = retrieved is not None and len(retrieved) == len(vector)
                 logger.info(
                     "Vector stored and verified: dimension=%d, stored_in_vec=%s",
-                    len(vector), retrievable,
+                    len(vector),
+                    retrievable,
                 )
             else:
                 retrievable = False
@@ -150,9 +150,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 "vector": retrieved,
                 "dimension": len(retrieved),
             }
-        return _error(
-            "No embedding found for %s with model %s" % (image_path, model_name), 404
-        )
+        return _error(f"No embedding found for {image_path} with model {model_name}", 404)
 
     @bp.route("/_api/find_similar", methods=["POST"])
     def find_similar():
@@ -184,9 +182,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
 
         db_path = FeaturesDatabase.default_db_path(folder)
         if not db_path.exists():
-            return _error(
-                "No database found at %s. Process the folder first." % db_path, 404
-            )
+            return _error(f"No database found at {db_path}. Process the folder first.", 404)
 
         if query_vector:
             if not isinstance(query_vector, list) or len(query_vector) == 0:
@@ -195,6 +191,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
         elif query_text:
             try:
                 from src.embeddings import create_generator
+
                 generator = create_generator(
                     backend=config.embedding_backend,
                     host=config.llm_host,
@@ -205,10 +202,11 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 query_vector_final = generator.generate_from_text(query_text)
             except Exception as e:
                 logger.error("Failed to generate embedding from text: %s", e, exc_info=True)
-                return _error("Failed to generate embedding from text: %s" % e, 500)
+                return _error(f"Failed to generate embedding from text: {e}", 500)
         elif image_path:
             try:
                 from src.embeddings import create_generator
+
                 generator = create_generator(
                     backend=config.embedding_backend,
                     host=config.llm_host,
@@ -219,7 +217,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 query_vector_final = generator.generate(image_path)
             except Exception as e:
                 logger.error("Failed to generate embedding from image: %s", e, exc_info=True)
-                return _error("Failed to generate embedding from image: %s" % e, 500)
+                return _error(f"Failed to generate embedding from image: {e}", 500)
         else:
             return _error("One of query, vector, or image_path must be provided", 400)
 
@@ -231,7 +229,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 db.close()
         except Exception as e:
             logger.error("Failed to find similar images: %s", e, exc_info=True)
-            return _error("Failed to find similar images: %s" % e, 500)
+            return _error(f"Failed to find similar images: {e}", 500)
 
         results = [{"image_path": p, "score": s} for p, s in similar]
         return {

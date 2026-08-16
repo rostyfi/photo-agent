@@ -1,16 +1,16 @@
 """Tests for the errors callback."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
 import os
+import tempfile
+import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 import dash
 
-from src.layout import create_layout
-from src.config import AppConfig
 from src.callbacks.errors import register_all_errors_callbacks
+from src.config import AppConfig
+from src.layout import create_layout
 from src.simple_processing_tracker import SimpleProcessingTracker
 
 
@@ -21,12 +21,12 @@ class TestErrorsCallback(unittest.TestCase):
         """Set up test fixtures."""
         self.config = AppConfig()
         self.layout = create_layout(self.config)
-        
+
     def test_errors_callback_registered(self):
         """Test that error callbacks are registered."""
         app = dash.Dash(__name__)
         app.layout = self.layout
-        
+
         # This should not raise an error
         try:
             register_all_errors_callbacks(app)
@@ -36,16 +36,16 @@ class TestErrorsCallback(unittest.TestCase):
     def test_build_errors_display_empty(self):
         """Test building errors display with no errors."""
         from src.components import build_errors_display
-        
+
         result = build_errors_display([], "/test/folder")
-        
+
         # Should contain success message
         self.assertIn("No errors found", str(result))
 
     def test_build_errors_display_with_errors(self):
         """Test building errors display with errors."""
         from src.components import build_errors_display
-        
+
         errors = [
             {
                 "image_path": "/test/image1.jpg",
@@ -54,9 +54,9 @@ class TestErrorsCallback(unittest.TestCase):
                 "ts": "2026-01-01T12:00:00",
             }
         ]
-        
+
         result = build_errors_display(errors, "/test/folder")
-        
+
         # Should contain error information
         result_str = str(result)
         self.assertIn("image1.jpg", result_str)
@@ -69,7 +69,7 @@ class TestErrorsCallback(unittest.TestCase):
         # Full callback testing requires a running Dash server
         app = dash.Dash(__name__)
         app.layout = self.layout
-        
+
         # This should not raise
         try:
             register_all_errors_callbacks(app)

@@ -19,7 +19,7 @@ def register_sql_explorer_callback(app):
         ctx = dash.callback_context
         if not ctx.triggered:
             return dash.no_update
-        
+
         trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
         if trigger_id == "btn-sql-explorer":
             return True
@@ -63,7 +63,7 @@ def register_sql_explorer_callback(app):
 
         return dash_table.DataTable(
             columns=[{"name": c, "id": c} for c in columns],
-            data=[dict(zip(columns, row)) for row in rows],
+            data=[dict(zip(columns, row, strict=False)) for row in rows],
             style_table={"overflowX": "auto"},
             sort_action="native",
             filter_action="native",

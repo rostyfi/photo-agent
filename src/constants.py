@@ -19,7 +19,12 @@ VEC_REQUIRED = "Vector search library (sqlite-vec) is a HARD REQUIREMENT for vec
 VEC_NOT_INSTALLED = f"Vector search library (sqlite-vec) is not installed. {VEC_REQUIRED}"
 VEC_EXTENSION_LOAD_AUTH = f"Vector search extension loading is not authorized. {VEC_REQUIRED}"
 VEC_EXTENSION_NOT_FOUND = f"Vector search extension module cannot be found. {VEC_REQUIRED}"
-VEC_LOAD_FAILED = lambda e: f"Vector search library (sqlite-vec) could not be loaded: {e}. {VEC_REQUIRED}"
+
+
+def VEC_LOAD_FAILED(e):
+    return f"Vector search library (sqlite-vec) could not be loaded: {e}. {VEC_REQUIRED}"
+
+
 VEC_NOT_AVAILABLE = f"Vector search library (sqlite-vec) is not available. {VEC_REQUIRED}"
 
 # =============================================================================
@@ -30,16 +35,13 @@ VEC_NOT_AVAILABLE = f"Vector search library (sqlite-vec) is not available. {VEC_
 EMBEDDING_GENERATION_RETURNED_NONE = (
     "Embedding generation returned None. Vector search library is required for vector search functionality."
 )
-EMBEDDING_UNAVAILABLE = (
-    "Embedding generation unavailable - check Ollama server connection and model support"
-)
+EMBEDDING_UNAVAILABLE = "Embedding generation unavailable - check Ollama server connection and model support"
 EMBEDDING_NO_DESCRIPTION = (
     "No description available, cannot generate text embedding. "
     "Vector search library is required for vector search functionality."
 )
 EMBEDDING_NO_FOLDER_CONTEXT = (
-    "Cannot save embedding without folder context. "
-    "Vector search library is required for vector search functionality."
+    "Cannot save embedding without folder context. Vector search library is required for vector search functionality."
 )
 
 # =============================================================================
@@ -80,7 +82,15 @@ DEFAULT_LLM_MODEL = "gemma4:e2b-it-qat"
 # LOGGING CONSTANTS
 # =============================================================================
 
+
 # Log messages
-LOG_EMBEDDING_GENERATION = lambda path: f"Generating embedding for {path}"
-LOG_EMBEDDING_SAVED = lambda path, model, dim: f"Saved embedding for {path} (model: {model}, dimension: {dim})"
-LOG_EMBEDDING_FAILED = lambda path, e: f"Failed to generate embedding for {path}: {e}"
+def LOG_EMBEDDING_GENERATION(path):
+    return f"Generating embedding for {path}"
+
+
+def LOG_EMBEDDING_SAVED(path, model, dim):
+    return f"Saved embedding for {path} (model: {model}, dimension: {dim})"
+
+
+def LOG_EMBEDDING_FAILED(path, e):
+    return f"Failed to generate embedding for {path}: {e}"

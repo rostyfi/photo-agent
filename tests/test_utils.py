@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.utils import encode_image_file, compute_duration_stats
+from src.utils import compute_duration_stats, encode_image_file
 
 
 class TestEncodeImageFile(unittest.TestCase):

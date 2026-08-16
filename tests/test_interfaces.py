@@ -6,8 +6,10 @@ from src.interfaces import DEFAULT_PROMPT, BasePhotoExtractor, ErrorCode, Proces
 class _MinimalExtractor(BasePhotoExtractor):
     def extract(self, image_path, prompt=None, options=None):
         return ProcessingResult()
+
     def extract_b64(self, image_b64, prompt=None, options=None):
         return ProcessingResult()
+
     def health_check(self):
         return True
 
@@ -56,6 +58,7 @@ class TestInterfaces(unittest.TestCase):
         for code in ErrorCode:
             result = make_error_result(code, "test")
             self.assertEqual(result["error_code"], code.value)
+
 
 if __name__ == "__main__":
     unittest.main()

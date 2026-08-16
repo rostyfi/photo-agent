@@ -11,15 +11,14 @@ The simplified approach:
 
 import logging
 from contextlib import contextmanager
-from typing import Optional
 
-from src.config import AppConfig
-from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
+from plugins.llm import create_extractor
 from src.components import build_detail_modal_content, build_fullscreen_viewer
+from src.config import AppConfig
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
 from src.sidecar.database import FeaturesDatabase
 from src.simple_processing_tracker import SimpleProcessingTracker
 from src.vector_search.availability import is_vector_search_available
-from plugins.llm import create_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ _TRACKER_INSTANCE_CACHE: dict = {}  # folder -> SimpleProcessingTracker
 
 # Process-wide AppConfig cache. Environment variables do not change during a
 # running session, so reading them once avoids re-parsing on every callback.
-_CACHED_APP_CONFIG: Optional[AppConfig] = None
+_CACHED_APP_CONFIG: AppConfig | None = None
 
 
 def _get_app_config() -> AppConfig:
@@ -81,10 +80,19 @@ def _get_extractor(host, port, model, backend, timeout, default_prompt):
     )
 
 
-def _make_processing_config(host, port, model, backend, timeout, default_prompt,
-                            dry_run=False, app_config=None,
-                            embedding_enabled=True, embedding_model=None,
-                            embedding_backend=None):
+def _make_processing_config(
+    host,
+    port,
+    model,
+    backend,
+    timeout,
+    default_prompt,
+    dry_run=False,
+    app_config=None,
+    embedding_enabled=True,
+    embedding_model=None,
+    embedding_backend=None,
+):
     """Build a ProcessingConfig from loosely-typed form/state values.
 
     This is the canonical helper used across callback modules; import it
@@ -115,6 +123,7 @@ def _make_processing_config(host, port, model, backend, timeout, default_prompt,
         similarity_metric = "cosine"
 
     from src.config import ProcessingConfig
+
     return ProcessingConfig(
         backend="dry_run" if dry_run else (backend or "ollama"),
         host=host or DEFAULT_LLM_HOST,
@@ -135,12 +144,12 @@ def _open_modal(image_path, folder, index, paths):
     metadata = None
     embedding = None
     embedding_error = None
-    
+
     with _db_session(folder) as db:
         if db is not None:
             try:
                 metadata = db.get_feature_summary(image_path)
-                
+
                 # Check if there's an embedding_error in the metadata
                 if metadata and metadata.get("embedding_error"):
                     embedding_error = metadata["embedding_error"]
@@ -149,15 +158,15 @@ def _open_modal(image_path, folder, index, paths):
                     model_output = metadata["model_output"]
                     if isinstance(model_output, dict) and model_output.get("embedding_error"):
                         embedding_error = model_output["embedding_error"]
-                
+
                 # Try to get embedding vector (only if we don't already have an error)
                 if embedding_error is None:
                     try:
                         config = _get_app_config()
-                        
+
                         # Check if vector search library is available
                         vec_available = is_vector_search_available()
-                        
+
                         if vec_available:
                             embedding = db.get_embedding(image_path, config.embedding_model)
                         else:
@@ -171,13 +180,13 @@ def _open_modal(image_path, folder, index, paths):
                                 )
                     except RuntimeError as e:
                         # Vector search library not available - preserve the error message
-                        embedding_error = f"Vector search not available: {str(e)}"
+                        embedding_error = f"Vector search not available: {e!s}"
                         logger.debug("Vector search library not available for %s: %s", image_path, e)
                     except Exception as e:
                         # Other error (e.g., embedding not found)
                         embedding_error = f"Failed to load embedding: {str(e)[:100]}"
                         logger.debug("Failed to load embedding for %s: %s", image_path, e)
-                
+
                 # Check if embedding metadata exists in image_embeddings table
                 if embedding_error is None and embedding is None:
                     try:
@@ -185,15 +194,19 @@ def _open_modal(image_path, folder, index, paths):
                         if db.has_embedding(image_path, config.embedding_model):
                             # Embedding metadata exists but vector not available for search
                             vec_available = is_vector_search_available()
-                            
+
                             if vec_available:
                                 # sqlite-vec library is available now but vector wasn't saved during processing
                                 actual_error = None
                                 if metadata and metadata.get("embedding_error"):
                                     actual_error = metadata.get("embedding_error")
-                                elif metadata and metadata.get("model_output") and isinstance(metadata.get("model_output"), dict):
+                                elif (
+                                    metadata
+                                    and metadata.get("model_output")
+                                    and isinstance(metadata.get("model_output"), dict)
+                                ):
                                     actual_error = metadata["model_output"].get("embedding_error")
-                                
+
                                 if actual_error:
                                     embedding_error = (
                                         f"Embedding metadata exists but vector not saved. "
@@ -216,7 +229,7 @@ def _open_modal(image_path, folder, index, paths):
                                 )
                     except Exception as e:
                         logger.debug("Failed to load embedding metadata for %s: %s", image_path, e, exc_info=True)
-                
+
                 # If image was processed but no embedding and no error, it means embedding generation failed
                 if embedding_error is None and embedding is None and metadata and metadata.get("success"):
                     try:
@@ -227,7 +240,7 @@ def _open_modal(image_path, folder, index, paths):
                         logger.debug("Failed to check embedding config for %s: %s", image_path, e, exc_info=True)
             except Exception:
                 logger.warning("Failed to load metadata for %s", image_path, exc_info=True)
-    
+
     content = build_detail_modal_content(image_path, folder, metadata, embedding, embedding_error)
     return True, content, {"paths": paths, "index": index}
 
@@ -237,32 +250,29 @@ def _open_fullscreen_content(image_path, folder, index, paths):
     metadata = None
     embedding = None
     embedding_error = None
-    
+
     with _db_session(folder) as db:
         if db is not None:
             try:
                 metadata = db.get_feature_summary(image_path)
-                
+
                 # Try to get embedding vector
                 try:
                     config = _get_app_config()
-                    
+
                     # Check if vector search library is available
                     vec_available = is_vector_search_available()
-                    
+
                     if vec_available:
                         embedding = db.get_embedding(image_path, config.embedding_model)
                     else:
                         # Try to get from metadata anyway
                         embedding = db.get_embedding(image_path, config.embedding_model)
                         if embedding is None:
-                            embedding_error = (
-                                "sqlite-vec is not available. "
-                                "Embeddings saved to metadata only."
-                            )
+                            embedding_error = "sqlite-vec is not available. Embeddings saved to metadata only."
                 except RuntimeError as e:
                     # sqlite-vec library not available
-                    embedding_error = f"sqlite-vec not available: {str(e)}"
+                    embedding_error = f"sqlite-vec not available: {e!s}"
                     logger.debug("sqlite-vec library not available for %s: %s", image_path, e)
                 except Exception as e:
                     # Other error (e.g., embedding not found)
@@ -270,6 +280,6 @@ def _open_fullscreen_content(image_path, folder, index, paths):
                     logger.debug("No embedding found for %s: %s", image_path, e)
             except Exception:
                 logger.warning("Failed to load metadata for %s", image_path, exc_info=True)
-    
+
     content = build_fullscreen_viewer(image_path, folder, metadata, embedding, embedding_error)
     return content, {"paths": paths, "index": index}

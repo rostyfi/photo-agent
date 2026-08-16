@@ -3,7 +3,6 @@
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 from src.interfaces import BasePhotoExtractor, ProcessingResult
 
@@ -19,11 +18,11 @@ class DryRunPhotoExtractor(BasePhotoExtractor):
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        model: Optional[str] = None,
+        host: str | None = None,
+        port: int | None = None,
+        model: str | None = None,
         timeout: int = 120,
-        default_prompt: Optional[str] = None,
+        default_prompt: str | None = None,
     ):
         """Initialise the dry-run extractor.
 
@@ -41,9 +40,9 @@ class DryRunPhotoExtractor(BasePhotoExtractor):
 
     def extract(
         self,
-        image_path: Union[str, Path],
-        prompt: Optional[str] = None,
-        options: Optional[Dict] = None,
+        image_path: str | Path,
+        prompt: str | None = None,
+        options: dict | None = None,
     ) -> ProcessingResult:
         """Return a synthetic ProcessingResult for the given image path."""
         used_prompt = prompt or self.default_prompt
@@ -55,8 +54,8 @@ class DryRunPhotoExtractor(BasePhotoExtractor):
     def extract_b64(
         self,
         image_b64: str,
-        prompt: Optional[str] = None,
-        options: Optional[Dict] = None,
+        prompt: str | None = None,
+        options: dict | None = None,
     ) -> ProcessingResult:
         """Return a synthetic ProcessingResult for the given base64 image."""
         used_prompt = prompt or self.default_prompt
@@ -68,12 +67,13 @@ class DryRunPhotoExtractor(BasePhotoExtractor):
         """Dry-run is always "healthy" — no server required."""
         return True
 
-    def _make_result(self, used_prompt: str, seed: Optional[str] = None) -> ProcessingResult:
+    def _make_result(self, used_prompt: str, seed: str | None = None) -> ProcessingResult:
         """Build a realistic synthetic ProcessingResult matching the prompt schema."""
         # deterministic but varied synthetic content based on seed
         suffix = ""
         if seed:
             import hashlib
+
             suffix = hashlib.md5(seed.encode()).hexdigest()[:6]
 
         synthetic_response = json.dumps(

@@ -6,12 +6,10 @@ reducing complexity in the main layout.py file.
 """
 
 import dash_bootstrap_components as dbc
-from dash import html, dcc
+from dash import dcc, html
 
 from src.config import AppConfig
 from src.constants import DEFAULT_LLM_MODEL
-from src.components import build_closest_photos_input
-
 
 # =============================================================================
 # STYLE CONSTANTS
@@ -49,9 +47,7 @@ def build_settings_modal(app_config: AppConfig):
                     ),
                 ]
             ),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="btn-close-settings", color="secondary")
-            ),
+            dbc.ModalFooter(dbc.Button("Close", id="btn-close-settings", color="secondary")),
         ],
         id="settings-modal",
         is_open=False,
@@ -600,9 +596,7 @@ def build_sql_explorer_modal():
                     html.Div(id="sql-results", className="mt-3"),
                 ]
             ),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="btn-close-sql-explorer", color="secondary")
-            ),
+            dbc.ModalFooter(dbc.Button("Close", id="btn-close-sql-explorer", color="secondary")),
         ],
         id="sql-explorer-modal",
         is_open=False,
@@ -636,9 +630,7 @@ def build_detail_modal():
                     className="g-2 flex-nowrap",
                 )
             ),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="btn-close-detail", color="secondary")
-            ),
+            dbc.ModalFooter(dbc.Button("Close", id="btn-close-detail", color="secondary")),
         ],
         id="detail-modal",
         is_open=False,
@@ -769,188 +761,4 @@ def build_fullscreen_modal():
         id="fullscreen-modal",
         is_open=False,
         fullscreen=True,
-    )
-
-
-def build_tools_section(app_config: AppConfig):
-    """Build the Tools section (Process Folder card, Tag Cloud card, Closest Photos)."""
-    return html.Div(
-        id="tools-section",
-        style={"display": "none"},
-        children=[
-            build_process_folder_card(app_config),
-            build_tag_cloud_card(),
-            build_closest_photos_input(),
-        ],
-    )
-
-
-def build_process_folder_card(app_config: AppConfig):
-    """Build the Process Server Folder card."""
-    return dbc.Card(
-        [
-            dbc.CardHeader("Process Server Folder"),
-            dbc.CardBody(
-                [
-                    dcc.Input(
-                        id="input-folder",
-                        type="hidden",
-                        value=app_config.folder_path,
-                    ),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                dbc.Button(
-                                    "Rescan folder",
-                                    id="btn-rescan",
-                                    color="secondary",
-                                    size="sm",
-                                    className="w-100",
-                                ),
-                                width="auto",
-                                className="flex-grow-1",
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    "Process Batch",
-                                    id="btn-process-batch",
-                                    color="warning",
-                                    size="sm",
-                                    className="w-100",
-                                ),
-                                width="auto",
-                                className="flex-grow-1",
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    "Process All",
-                                    id="btn-process-all",
-                                    color="success",
-                                    size="sm",
-                                    className="w-100",
-                                ),
-                                width="auto",
-                                className="flex-grow-1",
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    "Reprocess All",
-                                    id="btn-reprocess",
-                                    color="danger",
-                                    size="sm",
-                                    className="w-100",
-                                ),
-                                width="auto",
-                                className="flex-grow-1",
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    "Stop",
-                                    id="btn-stop-all",
-                                    color="danger",
-                                    size="sm",
-                                    className="w-100",
-                                    disabled=True,
-                                ),
-                                width="auto",
-                                className="flex-grow-1",
-                            ),
-                            dbc.Col(
-                                html.Div(id="pending-count", className="text-muted small"),
-                                width="auto",
-                                className="d-flex align-items-center",
-                            ),
-                        ],
-                        className="g-2 mb-2 flex-nowrap",
-                        align="center",
-                    ),
-                    html.Div(
-                        [
-                            dbc.Progress(
-                                id="batch-progress-overall",
-                                value=0,
-                                className="mb-1",
-                                style={"height": "20px"},
-                            ),
-                            dbc.Progress(
-                                id="batch-progress-current",
-                                value=0,
-                                striped=True,
-                                animated=True,
-                                className="mb-1",
-                                style={"height": "12px", "display": "none"},
-                            ),
-                            html.Div(
-                                id="batch-progress-label",
-                                className="small text-muted mb-1",
-                            ),
-                            html.Div(
-                                [
-                                    dbc.Button(
-                                        "Show batch history",
-                                        id="btn-toggle-history",
-                                        color="link",
-                                        size="sm",
-                                        className="p-0",
-                                    ),
-                                    dbc.Collapse(
-                                        html.Div(
-                                            id="batch-history",
-                                            className="small",
-                                        ),
-                                        id="history-collapse",
-                                        is_open=False,
-                                    ),
-                                ],
-                                id="batch-history-wrapper",
-                                style={"display": "none"},
-                            ),
-                        ],
-                        id="batch-progress-wrapper",
-                        style={"display": "none"},
-                        className="mb-2",
-                    ),
-                    html.Div(id="folder-file-list", className="mt-3"),
-                    html.Div(id="queue-status", className="mt-2"),
-                    html.Div(id="processing-status", className="mt-1"),
-                    html.Div(id="embedding-warnings-display", className="mt-2"),
-                    html.Small(
-                        "The folder must be accessible from the server/container where this app runs.",
-                        className="text-muted d-block mt-2",
-                    ),
-                ]
-            ),
-        ],
-        className="mb-4",
-    )
-
-
-def build_tag_cloud_card():
-    """Build the Tag Cloud card."""
-    return dbc.Card(
-        [
-            dbc.CardHeader("Tag Cloud"),
-            dbc.CardBody(
-                [
-                    dbc.Button(
-                        "Load Tag Cloud",
-                        id="btn-load-tag-cloud",
-                        color="primary",
-                        size="sm",
-                        className="mb-2 me-2",
-                    ),
-                    dbc.Button(
-                        "Clear filters",
-                        id="btn-tag-clear-all",
-                        color="link",
-                        size="sm",
-                        className="mb-2",
-                    ),
-                    html.Div(id="selected-tags-bar", className="mb-2"),
-                    html.Div(id="tag-cloud-container", className="mb-2"),
-                    html.Div(id="tag-cloud-results"),
-                ]
-            ),
-        ],
-        className="mb-4",
     )

@@ -4,10 +4,10 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html
 
-from src.callbacks.health_settings import register_health_callback, register_settings_modal_callback
-from plugins.llm import create_extractor
-from tests.test_callbacks import find_callback, patch_callback_context
 import src.callbacks.health_settings as _hs
+from plugins.llm import create_extractor
+from src.callbacks.health_settings import register_health_callback, register_settings_modal_callback
+from tests.test_callbacks import find_callback, patch_callback_context
 
 
 class TestHealthCallback(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestHealthCallback(unittest.TestCase):
                 html.Div(id="chk-dry-run"),
             ]
         )
-        
+
         # Create a mock create_extractor_fn
         def create_extractor_fn(**kwargs):
             return type(
@@ -37,8 +37,9 @@ class TestHealthCallback(unittest.TestCase):
                     "health_check": lambda self: True,
                 },
             )()
-        
+
         from src.config import AppConfig
+
         app_config = AppConfig.from_env()
         register_health_callback(self.app, create_extractor_fn, app_config)
 

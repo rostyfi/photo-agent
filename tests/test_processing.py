@@ -33,6 +33,7 @@ class TestProcessingResult(unittest.TestCase):
 
 class TestBatchJob(unittest.TestCase):
     """Test BatchJob-like behavior from processing.py (now in state/coordinator)."""
+
     def test_snapshot_returns_copy(self):
         job = _SimpleBatchJob(total=1)
         job.add({"id": 1})
@@ -68,6 +69,7 @@ class TestBatchJob(unittest.TestCase):
 
 class _SimpleBatchJob:
     """Simple thread-safe result container for testing."""
+
     def __init__(self, total):
         self.total = total
         self._results = []

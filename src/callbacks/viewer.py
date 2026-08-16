@@ -25,8 +25,7 @@ def register_detail_modal_callback(app):
         State("input-folder", "value"),
         prevent_initial_call=True,
     )
-    def handle_modal(_thumbnail_clicks, _prev_clicks, _next_clicks, _close_clicks,
-                     _thumbnail_ids, store_data, folder):
+    def handle_modal(_thumbnail_clicks, _prev_clicks, _next_clicks, _close_clicks, _thumbnail_ids, store_data, folder):
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update, dash.no_update, dash.no_update
@@ -73,7 +72,20 @@ def register_detail_modal_callback(app):
             try:
                 id_part = prop_id.rsplit(".", 1)[0]
                 btn_id = json.loads(id_part)
-                image_path = btn_id.get("index")
+                index_val = btn_id.get("index")
+                # Chat thumbnails encode {path, n} as a JSON string in the
+                # ``index`` field (Dash forbids dict-valued index). Other
+                # sources (tag cloud, search) use a plain string path.
+                if isinstance(index_val, dict):
+                    image_path = index_val.get("path", "")
+                elif isinstance(index_val, str):
+                    try:
+                        parsed = json.loads(index_val)
+                        image_path = parsed.get("path", index_val) if isinstance(parsed, dict) else index_val
+                    except (json.JSONDecodeError, ValueError):
+                        image_path = index_val
+                else:
+                    image_path = index_val
             except (json.JSONDecodeError, ValueError):
                 return dash.no_update, dash.no_update, dash.no_update
 
@@ -94,6 +106,7 @@ def register_detail_modal_callback(app):
 
 def register_fullscreen_open_callback(app):
     """Open the fullscreen viewer from the detail modal's Fullscreen button."""
+
     @app.callback(
         Output("fullscreen-modal", "is_open"),
         Output("fullscreen-modal-body", "children"),
@@ -121,6 +134,7 @@ def register_fullscreen_open_callback(app):
 
 def register_fullscreen_nav_callback(app):
     """Handle prev/next navigation inside the fullscreen viewer."""
+
     @app.callback(
         Output("fullscreen-modal-body", "children", allow_duplicate=True),
         Output("photo-list-store", "data", allow_duplicate=True),
@@ -165,6 +179,7 @@ def register_fullscreen_nav_callback(app):
 def register_fullscreen_close_callback(app):
     """Close the fullscreen viewer and update the detail modal to reflect any
     navigation that happened inside fullscreen."""
+
     @app.callback(
         Output("fullscreen-modal", "is_open", allow_duplicate=True),
         Output("detail-modal", "is_open", allow_duplicate=True),
@@ -197,7 +212,7 @@ def register_fullscreen_close_callback(app):
                             embedding = db.get_embedding(image_path, config.embedding_model)
                         except RuntimeError as e:
                             # Vector search library not available - don't truncate this important error
-                            embedding_error = f"Vector search not available: {str(e)}"
+                            embedding_error = f"Vector search not available: {e!s}"
                             logger.debug("Vector search library not available for %s: %s", image_path, e)
                         except Exception as e:
                             # Other error (e.g., embedding not found)
@@ -212,6 +227,7 @@ def register_fullscreen_close_callback(app):
 
 def register_fullscreen_metadata_toggle_callback(app):
     """Toggle the metadata overlay visibility in the fullscreen viewer."""
+
     @app.callback(
         Output("fullscreen-metadata-overlay", "style", allow_duplicate=True),
         Input("btn-toggle-metadata-fullscreen", "n_clicks"),
@@ -229,6 +245,7 @@ def register_fullscreen_metadata_toggle_callback(app):
 
 def register_fullscreen_folder_change_callback(app):
     """Close the fullscreen viewer when the user changes folder."""
+
     @app.callback(
         Output("fullscreen-modal", "is_open", allow_duplicate=True),
         Input("input-folder", "value"),
@@ -240,9 +257,10 @@ def register_fullscreen_folder_change_callback(app):
 
 def register_fullscreen_find_similar_callback(app):
     """Handle 'Find Similar' button click in fullscreen viewer.
-    
+
     Uses REST-based vector search that doesn't require sqlite-vec.
     """
+
     @app.callback(
         Output("similar-photos-store", "data", allow_duplicate=True),
         Input("btn-find-similar-fullscreen", "n_clicks"),
@@ -253,47 +271,44 @@ def register_fullscreen_find_similar_callback(app):
     def find_similar_fullscreen(n_clicks, store_data, folder):
         if not n_clicks or not folder:
             return None
-        
+
         paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
         current_index = store_data.get("index") if isinstance(store_data, dict) else None
-        
+
         if current_index is None or current_index >= len(paths):
             return None
-        
+
         current_image_path = paths[current_index]
-        
+
         try:
             # Get config
             config = _get_app_config()
-            
+
             # Check if database exists
             from src.sidecar.database.db import FeaturesDatabase
+
             db_path = FeaturesDatabase.default_db_path(folder)
             if not db_path.exists():
                 logger.warning("No database found for folder: %s", folder)
                 return None
-            
+
             # Call REST API endpoint to find similar photos by image
             import requests
-            
+
             # Build the API URL (same server, different endpoint)
             # Use localhost for internal requests (works in Docker container)
             api_url = f"http://127.0.0.1:{config.dash_port}/_api/find_similar"
-            
+
             payload = {
                 "folder": folder,
                 "image_path": current_image_path,
                 "model_name": config.embedding_model,
-                "limit": config.similarity_limit
+                "limit": config.similarity_limit,
             }
-            
+
             try:
-                response = requests.post(
-                    api_url,
-                    json=payload,
-                    timeout=300
-                )
-                
+                response = requests.post(api_url, json=payload, timeout=300)
+
                 if response.status_code != 200:
                     error_msg = f"API request failed with status {response.status_code}"
                     try:
@@ -301,28 +316,28 @@ def register_fullscreen_find_similar_callback(app):
                         error_msg = error_data.get("message", error_msg)
                     except (ValueError, KeyError):
                         error_msg = f"{error_msg}: {response.text[:200]}"
-                    
+
                     logger.error("REST vector search API error: %s", error_msg)
                     return None
-                
+
                 result = response.json()
-                
+
                 if result.get("status") != "success":
                     logger.error("REST vector search failed: %s", result.get("message", "Unknown error"))
                     return None
-                
+
                 similar_results = result.get("results", [])
-                
+
                 # Return similar images data in the expected format
                 return {
                     "images": [item.get("image_path") for item in similar_results],
                     "scores": [item.get("score", 0.0) for item in similar_results],
                 }
-                
+
             except requests.exceptions.RequestException as e:
                 logger.error("REST vector search request failed: %s", e)
                 return None
-                
+
         except Exception as e:
             logger.error("Failed to find similar images in fullscreen: %s", e)
             return None
@@ -427,4 +442,3 @@ def register_reveal_callbacks(app):
         State("input-folder", "value"),
         prevent_initial_call=True,
     )
-

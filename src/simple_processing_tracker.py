@@ -22,7 +22,6 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Set, List, Optional, Dict
 
 from src.constants import STATUS_COMPLETED, STATUS_FAILED
 from src.sqlite_utils import open_connection
@@ -36,7 +35,7 @@ TABLE_PROCESSING_TRACKER = "processing_tracker"
 class SimpleProcessingTracker:
     """
     Simple database-based tracker for processed images.
-    
+
     Tracks which images have been processed in a folder by storing
     entries in a SQLite table. This replaces the complex WAL system
     with a much simpler approach.
@@ -44,7 +43,7 @@ class SimpleProcessingTracker:
 
     def __init__(self, folder: str):
         """Initialize the tracker for a folder.
-        
+
         Args:
             folder: The folder to track processing for.
         """
@@ -88,55 +87,51 @@ class SimpleProcessingTracker:
             logger.error("Failed to ensure processing tracker schema: %s", e)
             raise
 
-    def get_processed_files(self) -> Set[str]:
+    def get_processed_files(self) -> set[str]:
         """Get all image paths that have been processed (completed or failed).
-        
+
         Returns:
             Set of image paths that have been processed.
         """
         if not self._db_path.exists():
             return set()
-            
+
         conn = self._get_connection()
         try:
             processed = set()
-            
+
             # Get from processing_tracker table
-            cursor = conn.execute(
-                f"SELECT image_path FROM {TABLE_PROCESSING_TRACKER}"
-            )
+            cursor = conn.execute(f"SELECT image_path FROM {TABLE_PROCESSING_TRACKER}")
             processed.update(row[0] for row in cursor.fetchall())
-            
+
             # Also check raw_features table for backward compatibility
             # Images that have entries in raw_features are considered processed
             try:
-                cursor2 = conn.execute(
-                    "SELECT DISTINCT image_path FROM raw_features WHERE success = 1"
-                )
+                cursor2 = conn.execute("SELECT DISTINCT image_path FROM raw_features WHERE success = 1")
                 processed.update(row[0] for row in cursor2.fetchall())
             except sqlite3.OperationalError:
                 # raw_features table doesn't exist, skip it
                 pass
-            
+
             return processed
         except Exception as e:
             logger.error("Failed to get processed files: %s", e)
             return set()
 
-    def get_failed_files(self) -> List[Dict]:
+    def get_failed_files(self) -> list[dict]:
         """Get all failed files with error information.
-        
+
         Returns:
             List of dicts with image_path, error_code, and error_msg.
         """
         if not self._db_path.exists():
             return []
-            
+
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 f"SELECT image_path, error_code, error_msg FROM {TABLE_PROCESSING_TRACKER} WHERE status = ?",
-                (STATUS_FAILED,)
+                (STATUS_FAILED,),
             )
             return [
                 {
@@ -152,7 +147,7 @@ class SimpleProcessingTracker:
 
     def mark_completed(self, image_path: str) -> None:
         """Mark an image as successfully completed.
-        
+
         Args:
             image_path: Path to the image.
         """
@@ -169,20 +164,21 @@ class SimpleProcessingTracker:
                     error_code = NULL,
                     error_msg = NULL
                 """,
-                (image_path, STATUS_COMPLETED, now)
+                (image_path, STATUS_COMPLETED, now),
             )
             conn.commit()
             logger.debug("Marked %s as completed", image_path)
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
+
             clear_processed_cache(self.folder)
         except Exception as e:
             logger.error("Failed to mark %s as completed: %s", image_path, e)
             raise
 
-    def mark_failed(self, image_path: str, error_code: Optional[str] = None, error_msg: Optional[str] = None) -> None:
+    def mark_failed(self, image_path: str, error_code: str | None = None, error_msg: str | None = None) -> None:
         """Mark an image as failed.
-        
+
         Args:
             image_path: Path to the image.
             error_code: Optional error code.
@@ -201,12 +197,13 @@ class SimpleProcessingTracker:
                     error_code = excluded.error_code,
                     error_msg = excluded.error_msg
                 """,
-                (image_path, STATUS_FAILED, now, error_code, error_msg)
+                (image_path, STATUS_FAILED, now, error_code, error_msg),
             )
             conn.commit()
             logger.debug("Marked %s as failed: %s", image_path, error_msg)
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
+
             clear_processed_cache(self.folder)
         except Exception as e:
             logger.error("Failed to mark %s as failed: %s", image_path, e)
@@ -214,47 +211,44 @@ class SimpleProcessingTracker:
 
     def is_processed(self, image_path: str) -> bool:
         """Check if an image has been processed (completed or failed).
-        
+
         Args:
             image_path: Path to the image.
-            
+
         Returns:
             True if the image has been processed, False otherwise.
         """
         if not self._db_path.exists():
             return False
-            
+
         conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                f"SELECT 1 FROM {TABLE_PROCESSING_TRACKER} WHERE image_path = ?",
-                (image_path,)
-            )
+            cursor = conn.execute(f"SELECT 1 FROM {TABLE_PROCESSING_TRACKER} WHERE image_path = ?", (image_path,))
             return cursor.fetchone() is not None
         except Exception as e:
             logger.error("Failed to check if %s is processed: %s", image_path, e)
             return False
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """Get processing statistics.
-        
+
         Returns:
             Dict with total, completed, and failed counts.
         """
         if not self._db_path.exists():
             return {"total": 0, "completed": 0, "failed": 0}
-            
+
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 f"""
-                SELECT 
+                SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed,
                     SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as failed
                 FROM {TABLE_PROCESSING_TRACKER}
                 """,
-                (STATUS_COMPLETED, STATUS_FAILED)
+                (STATUS_COMPLETED, STATUS_FAILED),
             )
             row = cursor.fetchone()
             if row:

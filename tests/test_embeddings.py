@@ -4,22 +4,23 @@ sqlite-vec is a HARD REQUIREMENT for vector search functionality.
 Ollama v0.1.0+ is required for embedding generation.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
-import tempfile
 import os
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from src.embeddings import (
+    DEFAULT_EMBEDDING_MODEL,
     BaseEmbeddingGenerator,
     OllamaEmbeddingGenerator,
     create_generator,
     list_embedding_backends,
-    DEFAULT_EMBEDDING_MODEL,
 )
 from src.embeddings.registry import (
-    register_embedding_backend,
     get_embedding_backend,
+    register_embedding_backend,
     unregister_embedding_backend,
 )
 
@@ -80,7 +81,7 @@ class TestOllamaEmbeddingGenerator:
         mock_response.status_code = 200
         mock_response.json.return_value = {"version": "0.1.0"}
         mock_session.get.return_value = mock_response
-        
+
         generator = OllamaEmbeddingGenerator()
         version = generator._check_ollama_version()
         assert version == "0.1.0"
@@ -89,9 +90,10 @@ class TestOllamaEmbeddingGenerator:
     def test_check_ollama_version_failure(self, mock_session_cls):
         """Test failed Ollama version check."""
         import requests
+
         mock_session = mock_session_cls.return_value
         mock_session.get.side_effect = requests.exceptions.RequestException("Connection error")
-        
+
         generator = OllamaEmbeddingGenerator()
         version = generator._check_ollama_version()
         assert version is None
@@ -104,19 +106,19 @@ class TestOllamaEmbeddingGenerator:
         version_response = Mock()
         version_response.status_code = 200
         version_response.json.return_value = {"version": "0.1.0"}
-        
+
         # Mock tags endpoint
         tags_response = Mock()
         tags_response.status_code = 200
         tags_response.json.return_value = {"models": []}
-        
+
         # Mock embeddings endpoint (to check if it exists)
         embeddings_response = Mock()
         embeddings_response.status_code = 400  # Bad request means endpoint exists
-        
+
         mock_session.get.side_effect = [version_response, tags_response]
         mock_session.post.return_value = embeddings_response
-        
+
         generator = OllamaEmbeddingGenerator()
         result = generator.health_check()
         assert result is True
@@ -129,19 +131,19 @@ class TestOllamaEmbeddingGenerator:
         version_response = Mock()
         version_response.status_code = 200
         version_response.json.return_value = {"version": "0.1.0"}
-        
+
         # Mock tags endpoint
         tags_response = Mock()
         tags_response.status_code = 200
         tags_response.json.return_value = {"models": []}
-        
+
         # Mock embeddings endpoint (404 means endpoint doesn't exist)
         embeddings_response = Mock()
         embeddings_response.status_code = 404
-        
+
         mock_session.get.side_effect = [version_response, tags_response]
         mock_session.post.return_value = embeddings_response
-        
+
         generator = OllamaEmbeddingGenerator()
         result = generator.health_check()
         assert result is False
@@ -154,7 +156,7 @@ class TestOllamaEmbeddingGenerator:
         version_response = Mock()
         version_response.status_code = 200
         version_response.json.return_value = {"version": "0.1.0"}
-        
+
         # Mock tags endpoint
         tags_response = Mock()
         tags_response.status_code = 200
@@ -165,7 +167,7 @@ class TestOllamaEmbeddingGenerator:
             ]
         }
         mock_session.get.side_effect = [version_response, tags_response]
-        
+
         generator = OllamaEmbeddingGenerator()
         models = generator.list_models()
         assert "nomic-embed-text" in models
@@ -175,15 +177,16 @@ class TestOllamaEmbeddingGenerator:
     def test_list_models_failure(self, mock_session_cls):
         """Test failed model listing."""
         import requests
+
         mock_session = mock_session_cls.return_value
         # Mock version check endpoint (called during __init__)
         version_response = Mock()
         version_response.status_code = 200
         version_response.json.return_value = {"version": "0.1.0"}
-        
+
         # Mock tags endpoint - raise exception
         mock_session.get.side_effect = [version_response, requests.exceptions.RequestException("Connection error")]
-        
+
         generator = OllamaEmbeddingGenerator()
         models = generator.list_models()
         assert models == []
@@ -224,14 +227,14 @@ class TestRegistry:
         """Test registering and getting a backend."""
         # Clear any existing registrations
         unregister_embedding_backend("test_backend")
-        
+
         def test_factory():
             return Mock()
-        
+
         register_embedding_backend("test_backend", test_factory)
         factory = get_embedding_backend("test_backend")
         assert factory is test_factory
-        
+
         # Clean up
         unregister_embedding_backend("test_backend")
 
@@ -242,12 +245,13 @@ class TestRegistry:
 
     def test_unregister_backend(self):
         """Test unregistering a backend."""
+
         def test_factory():
             return Mock()
-        
+
         register_embedding_backend("test_unregister", test_factory)
         assert get_embedding_backend("test_unregister") is not None
-        
+
         result = unregister_embedding_backend("test_unregister")
         assert result is True
         assert get_embedding_backend("test_unregister") is None
@@ -259,7 +263,7 @@ class TestBaseEmbeddingGenerator:
     def test_abstract_methods(self):
         """Test that BaseEmbeddingGenerator has all required abstract methods."""
         from src.embeddings.base import BaseEmbeddingGenerator
-        
+
         # Check that all methods are abstract
         assert hasattr(BaseEmbeddingGenerator, "generate")
         assert hasattr(BaseEmbeddingGenerator, "generate_b64")

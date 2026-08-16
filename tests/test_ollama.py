@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from plugins.llm import create_extractor, list_backends
 from plugins.llm.base import BasePhotoExtractor, ErrorCode
 from plugins.llm.ollama import OllamaPhotoExtractor
-from plugins.llm import create_extractor, list_backends
 
 
 class TestOllamaPhotoExtractor(unittest.TestCase):
@@ -71,9 +71,7 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         self.assertFalse(payload["stream"])
 
     def test_build_payload_with_options(self):
-        payload = self.extractor._build_payload(
-            "base64data", "test prompt", options={"temperature": 0.5}
-        )
+        payload = self.extractor._build_payload("base64data", "test prompt", options={"temperature": 0.5})
         self.assertEqual(payload["options"], {"temperature": 0.5})
 
     @patch("plugins.llm.ollama.encode_image_file")
@@ -124,7 +122,8 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
 
         with patch.object(
-            self.extractor._session, "post",
+            self.extractor._session,
+            "post",
             side_effect=requests.exceptions.Timeout("timed out"),
         ):
             result = self.extractor.extract("/fake/path.jpg")
@@ -138,7 +137,8 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
 
         with patch.object(
-            self.extractor._session, "post",
+            self.extractor._session,
+            "post",
             side_effect=requests.exceptions.ConnectionError("refused"),
         ):
             result = self.extractor.extract("/fake/path.jpg")
@@ -187,7 +187,8 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
 
     def test_health_check_failure(self):
         with patch.object(
-            self.extractor._session, "get",
+            self.extractor._session,
+            "get",
             side_effect=requests.exceptions.ConnectionError("refused"),
         ):
             self.assertFalse(self.extractor.health_check())

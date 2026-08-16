@@ -17,13 +17,13 @@ import diskcache
 from dash import DiskcacheManager
 from flask import abort, jsonify, make_response, request
 
+from plugins.formats.image import read_image_bytes
+from plugins.llm import OllamaChatClient, create_extractor
+from src.api import api_chat_handler, api_chat_stream_handler, register_debug_blueprint, register_vectors_blueprint
+from src.callbacks import register_callbacks
 from src.config import AppConfig
 from src.layout import create_layout
-from src.callbacks import register_callbacks
-from plugins.llm import create_extractor, OllamaChatClient
-from plugins.formats.image import read_image_bytes
 from src.services import ChatService
-from src.api import api_chat_handler, api_chat_stream_handler, register_vectors_blueprint, register_debug_blueprint
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def _is_running_in_container() -> bool:
     if Path("/.dockerenv").exists():
         return True
     try:
-        with open("/proc/1/cgroup", "r") as f:
+        with open("/proc/1/cgroup") as f:
             return any(k in f.read() for k in ("docker", "containerd", "lxc", "kubepods"))
     except (FileNotFoundError, OSError):
         return False
@@ -93,8 +93,19 @@ def _is_running_in_container() -> bool:
 
 # Mount points that are never useful photo bind mounts — skip them.
 _SYSTEM_MOUNT_PREFIXES = (
-    "/proc", "/sys", "/dev", "/run", "/etc", "/var", "/tmp",
-    "/usr", "/lib", "/boot", "/snap", "/root", "/mnt/wsl",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/etc",
+    "/var",
+    "/tmp",
+    "/usr",
+    "/lib",
+    "/boot",
+    "/snap",
+    "/root",
+    "/mnt/wsl",
 )
 
 
@@ -115,7 +126,7 @@ def _autodetect_reveal_map() -> str:
         return ""
 
     try:
-        with open("/proc/self/mountinfo", "r") as f:
+        with open("/proc/self/mountinfo") as f:
             lines = f.readlines()
     except (FileNotFoundError, OSError):
         return ""
@@ -173,7 +184,7 @@ def _apply_reveal_map(server_path: str, reveal_map: str) -> str:
         if not container_prefix or not host_prefix:
             continue
         if server_path == container_prefix or server_path.startswith(container_prefix + "/"):
-            return host_prefix + server_path[len(container_prefix):]
+            return host_prefix + server_path[len(container_prefix) :]
     return server_path
 
 
@@ -200,13 +211,20 @@ def create_app(config=None):
         suppress_callback_exceptions=True,
     )
 
-    def _create_extractor(backend=config.llm_backend, host=config.llm_host,
-                          port=config.llm_port, model=config.llm_model,
-                          timeout=config.timeout):
+    def _create_extractor(
+        backend=config.llm_backend,
+        host=config.llm_host,
+        port=config.llm_port,
+        model=config.llm_model,
+        timeout=config.timeout,
+    ):
         """Factory wrapper that creates an extractor with the app's default prompt."""
         return create_extractor(
             backend=backend,
-            host=host, port=port, model=model, timeout=timeout,
+            host=host,
+            port=port,
+            model=model,
+            timeout=timeout,
             default_prompt=config.default_prompt,
         )
 
@@ -221,8 +239,7 @@ def create_app(config=None):
     )
     chat_service = ChatService(config, chat_client=chat_client)
 
-    register_callbacks(app, _create_extractor, config.to_processing_config(),
-                       config)
+    register_callbacks(app, _create_extractor, config.to_processing_config(), config)
 
     # Register extracted Flask blueprints (vector API + diagnostic endpoints)
     register_vectors_blueprint(app.server, config)
@@ -245,7 +262,7 @@ def create_app(config=None):
             logger.debug("Preview rejected: missing path or folder parameter")
             abort(404)
 
-        image_path, folder_path = _resolve_preview_paths(path_str, folder_str)
+        image_path, _folder_path = _resolve_preview_paths(path_str, folder_str)
         if image_path is None:
             abort(404)
 
@@ -295,7 +312,7 @@ def create_app(config=None):
     @app.server.route("/_api/chat", methods=["POST"])
     def api_chat():
         """API endpoint to chat with the Ollama LLM with tool support.
-        
+
         This endpoint has been refactored to use ChatService for business logic.
         The handler delegates to api_chat_handler which uses the ChatService.
         """
@@ -309,6 +326,57 @@ def create_app(config=None):
         text appears incrementally in the chat window.
         """
         return api_chat_stream_handler(config, chat_service)
+
+    @app.server.route("/_api/process_status", methods=["GET"])
+    def api_process_status():
+        """Return live batch processing progress for a folder.
+
+        Reads the per-folder ``batch_state.json`` written by the ``/process``
+        tool's background thread. The chat UI polls this to render a
+        real-time progress bar while processing runs.
+
+        Query params:
+            folder: Absolute path to the folder being processed.
+
+        Returns JSON ``{status, total, completed, status_msg, folder,
+        active}`` where ``active`` is True when the batch is still running.
+        """
+        folder_str = request.args.get("folder")
+        if not folder_str:
+            return jsonify({"status": "error", "message": "folder is required"}), 400
+
+        from src.batch_state import read_batch_state
+
+        try:
+            state = read_batch_state(folder_str)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("process_status read failed for %s: %s", folder_str, e)
+            state = None
+
+        if not state:
+            return jsonify(
+                {
+                    "status": "idle",
+                    "total": 0,
+                    "completed": 0,
+                    "status_msg": "",
+                    "folder": folder_str,
+                    "active": False,
+                }
+            )
+
+        status = str(state.get("status", "unknown"))
+        active = status.startswith("running")
+        return jsonify(
+            {
+                "status": status,
+                "total": int(state.get("total", 0)),
+                "completed": int(state.get("completed", 0)),
+                "status_msg": state.get("status_msg", ""),
+                "folder": folder_str,
+                "active": active,
+            }
+        )
 
     @app.server.route("/_api/reveal", methods=["POST"])
     def api_reveal():
@@ -331,11 +399,13 @@ def create_app(config=None):
             return jsonify({"status": "error", "message": "path not found or outside folder"}), 404
 
         host_path = _apply_reveal_map(str(image_path), _resolve_reveal_map(config.reveal_map))
-        return jsonify({
-            "status": "success",
-            "path": host_path,
-            "folder": str(Path(host_path).parent),
-        })
+        return jsonify(
+            {
+                "status": "success",
+                "path": host_path,
+                "folder": str(Path(host_path).parent),
+            }
+        )
 
     return app, config
 
@@ -350,6 +420,7 @@ if __name__ == "__main__":
     DASH_DEBUG = config.dash_debug
 
     from src.state import request_shutdown
+
     signal.signal(signal.SIGINT, lambda _sig, _frame: request_shutdown())
     signal.signal(signal.SIGTERM, lambda _sig, _frame: request_shutdown())
     print(f"Starting Photo Feature Extractor web app on http://{DASH_HOST}:{DASH_PORT}")

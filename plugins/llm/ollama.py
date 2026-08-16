@@ -5,14 +5,13 @@ Ollama LLM client for photo feature extraction.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.interfaces import BasePhotoExtractor, ErrorCode, DEFAULT_PROMPT, ProcessingResult
-from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
+from src.interfaces import DEFAULT_PROMPT, BasePhotoExtractor, ErrorCode, ProcessingResult
 from src.utils import encode_image_file
 
 logger = logging.getLogger(__name__)
@@ -25,11 +24,11 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        model: Optional[str] = None,
+        host: str | None = None,
+        port: int | None = None,
+        model: str | None = None,
         timeout: int = 120,
-        default_prompt: Optional[str] = None,
+        default_prompt: str | None = None,
         max_retries: int = 3,
         backoff_factor: float = 1.0,
     ):
@@ -70,7 +69,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
         session.mount("https://", adapter)
         return session
 
-    def _encode_image(self, image_path: Union[str, Path]) -> str:
+    def _encode_image(self, image_path: str | Path) -> str:
         """Read and base64-encode an image file via the format plugin system."""
         return encode_image_file(str(image_path))
 
@@ -94,7 +93,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
         image_b64: str,
         prompt: str,
         stream: bool = False,
-        options: Optional[Dict] = None,
+        options: dict | None = None,
     ) -> dict:
         """Construct the JSON payload for the Ollama /api/generate endpoint."""
         payload = {
@@ -110,8 +109,8 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
     def extract_b64(
         self,
         image_b64: str,
-        prompt: Optional[str] = None,
-        options: Optional[Dict] = None,
+        prompt: str | None = None,
+        options: dict | None = None,
     ) -> ProcessingResult:
         """Extract features from a base64-encoded image via the Ollama API.
 
@@ -151,34 +150,38 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                 payload_stream = self._build_payload(image_b64, used_prompt, stream=True, options=options)
                 response_stream = self._session.post(url, json=payload_stream, timeout=self.timeout, stream=True)
                 response_stream.raise_for_status()
-                
+
                 # Collect all streaming chunks
                 full_response = ""
                 total_duration = 0
                 eval_count = 0
                 done = False
-                
+
                 for line in response_stream.iter_lines():
                     if line:
-                        chunk = json.loads(line.decode('utf-8'))
+                        chunk = json.loads(line.decode("utf-8"))
                         chunk_response = chunk.get("response", "")
-                        
+
                         # Smart concatenation: add space if the previous chunk ends with
                         # a letter/digit and the new chunk starts with a letter/digit
-                        if (full_response and chunk_response and 
-                            full_response[-1].isalnum() and chunk_response[0].isalnum()):
+                        if (
+                            full_response
+                            and chunk_response
+                            and full_response[-1].isalnum()
+                            and chunk_response[0].isalnum()
+                        ):
                             full_response += " " + chunk_response
                         else:
                             full_response += chunk_response
-                        
+
                         total_duration = chunk.get("total_duration", 0)
                         eval_count = chunk.get("eval_count", 0)
                         if chunk.get("done", False):
                             done = True
                             break
-                
+
                 cleaned_response = self._strip_markdown_fences(full_response)
-                
+
                 # Check if streaming also returned empty
                 if not cleaned_response:
                     logger.error("Both streaming and non-streaming modes returned empty responses")
@@ -189,7 +192,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                         error="Model returned empty response in both streaming and non-streaming modes",
                         error_code=ErrorCode.INVALID_RESPONSE.value,
                     )
-                
+
                 result = ProcessingResult(
                     success=True,
                     model=self.model,
@@ -227,9 +230,9 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
 
     def extract(
         self,
-        image_path: Union[str, Path],
-        prompt: Optional[str] = None,
-        options: Optional[Dict] = None,
+        image_path: str | Path,
+        prompt: str | None = None,
+        options: dict | None = None,
     ) -> ProcessingResult:
         """Read an image file, encode to base64, then call extract_b64.
 

@@ -16,7 +16,7 @@ Features:
 
 Example usage:
     from src.embeddings import create_generator
-    
+
     # Create a generator
     generator = create_generator(
         backend="ollama",
@@ -24,31 +24,30 @@ Example usage:
         port=11434,
         model="clip-vit-base-patch32"
     )
-    
+
     # Generate embedding for an image
     embedding = generator.generate("photo.jpg")
-    
+
     # Save to database
     from src.sidecar.database import FeaturesDatabase
     db = FeaturesDatabase("/photos/.local-photo-agent/features.db")
     db.init_vector_search()  # Requires vector search library
     db.save_embedding("photo.jpg", "clip-vit-base-patch32", embedding)
-    
+
     # Find similar images
     similar = db.find_similar(embedding, limit=10)
 """
 
 import logging
 import pkgutil
-from typing import Callable, Optional
 
 from src.constants import DEFAULT_LLM_HOST
 from src.embeddings.base import BaseEmbeddingGenerator
-from src.embeddings.ollama import OllamaEmbeddingGenerator, DEFAULT_EMBEDDING_MODEL
+from src.embeddings.ollama import DEFAULT_EMBEDDING_MODEL, OllamaEmbeddingGenerator
 from src.embeddings.registry import (
-    register_embedding_backend,
     get_embedding_backend,
     list_embedding_backends,
+    register_embedding_backend,
     unregister_embedding_backend,
 )
 
@@ -59,7 +58,7 @@ register_embedding_backend("ollama", OllamaEmbeddingGenerator)
 
 # Auto-discover backend packages
 try:
-    for finder, name, ispkg in pkgutil.iter_modules(["plugins.embeddings.backends"]):
+    for _finder, name, ispkg in pkgutil.iter_modules(["plugins.embeddings.backends"]):
         if ispkg:
             try:
                 __import__(f"plugins.embeddings.backends.{name}")
@@ -81,9 +80,9 @@ def create_generator(
     **kwargs,
 ) -> BaseEmbeddingGenerator:
     """Factory function to create an embedding generator.
-    
+
     Auto-discovers and instantiates the requested embedding backend.
-    
+
     Args:
         backend: The backend name (e.g., "ollama"). Default: "ollama".
         host: Server hostname or IP.
@@ -93,10 +92,10 @@ def create_generator(
         max_retries: Maximum retry attempts on failure.
         backoff_factor: Multiplier for exponential backoff.
         **kwargs: Additional backend-specific arguments.
-        
+
     Returns:
         A configured BaseEmbeddingGenerator instance.
-        
+
     Raises:
         ValueError: If the requested backend is not found.
         RuntimeError: If vector search library is not available (checked on first use).
@@ -109,7 +108,7 @@ def create_generator(
             f"Available backends: {available}. "
             f"Vector search library is a HARD REQUIREMENT for vector search."
         )
-    
+
     return factory(
         host=host,
         port=port,
@@ -122,12 +121,12 @@ def create_generator(
 
 
 __all__ = [
+    "DEFAULT_EMBEDDING_MODEL",
     "BaseEmbeddingGenerator",
     "OllamaEmbeddingGenerator",
-    "DEFAULT_EMBEDDING_MODEL",
     "create_generator",
-    "register_embedding_backend",
     "get_embedding_backend",
     "list_embedding_backends",
+    "register_embedding_backend",
     "unregister_embedding_backend",
 ]

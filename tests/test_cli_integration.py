@@ -15,6 +15,7 @@ class TestCliIntegration(unittest.TestCase):
 
     def test_main_imports_and_parser(self):
         import main
+
         self.assertTrue(hasattr(main, "main"))
 
     def test_processing_result_end_to_end_mocked(self):

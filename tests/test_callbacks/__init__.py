@@ -7,7 +7,7 @@ def find_callback(app, output_id, output_prop):
     Handles both plain keys and hashed allow_duplicate keys.
     Returns the Dash wrapper; use .__wrapped__ to call the raw function.
     """
-    for k, v in app.callback_map.items():
+    for _k, v in app.callback_map.items():
         out = v.get("output")
         outs = out if isinstance(out, list) else [out]
         for o in outs:
@@ -25,12 +25,8 @@ def make_mock_ctx(triggered):
         (),
         {
             "triggered": triggered,
-            "triggered_id": (
-                triggered[0]["prop_id"].rsplit(".", 1)[0] if triggered else None
-            ),
-            "triggered_prop_ids": {
-                t["prop_id"]: t.get("value") for t in triggered
-            },
+            "triggered_id": (triggered[0]["prop_id"].rsplit(".", 1)[0] if triggered else None),
+            "triggered_prop_ids": {t["prop_id"]: t.get("value") for t in triggered},
         },
     )()
 

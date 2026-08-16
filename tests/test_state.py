@@ -3,11 +3,15 @@ import unittest
 
 from src.state import (
     _cancel_job as cancel_job,
-    is_job_cancelled,
+)
+from src.state import (
     _remove_job_cancel as remove_job_cancel,
+)
+from src.state import (
+    is_job_cancelled,
+    is_shutdown_requested,
     request_shutdown,
     reset_shutdown_event,
-    is_shutdown_requested,
 )
 
 

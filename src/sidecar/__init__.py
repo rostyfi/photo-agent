@@ -1,11 +1,9 @@
-from typing import Optional
-
+from .database import DatabaseSidecarStore, FeaturesDatabase
 from .store import AbstractSidecarStore
-from .database import FeaturesDatabase, DatabaseSidecarStore
 
-__all__ = ["AbstractSidecarStore", "DatabaseSidecarStore", "get_writer", "FeaturesDatabase"]
+__all__ = ["AbstractSidecarStore", "DatabaseSidecarStore", "FeaturesDatabase", "get_writer"]
 
-_default_writer: Optional[DatabaseSidecarStore] = None
+_default_writer: DatabaseSidecarStore | None = None
 
 
 def get_writer() -> AbstractSidecarStore:

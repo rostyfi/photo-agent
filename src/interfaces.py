@@ -1,16 +1,16 @@
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from collections.abc import Generator
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Generator, Optional, Union
 
 # Import constants for default values
-from src.constants import DEFAULT_LLM_MODEL, DEFAULT_LLM_HOST
+from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
 
 DEFAULT_PROMPT = (
     "Return ONLY valid JSON. Do NOT add any text before or after the JSON. "
-    "Format: {\"description\": \"...\", \"subjects\": [...], \"objects\": [...], "
-    "\"colors\": [...], \"setting\": \"...\", \"mood\": \"...\", \"tags\": [...]}. "
+    'Format: {"description": "...", "subjects": [...], "objects": [...], '
+    '"colors": [...], "setting": "...", "mood": "...", "tags": [...]}. '
 )
 
 
@@ -24,7 +24,7 @@ class ErrorCode(Enum):
     PROCESSING_ERROR = "processing_error"
 
 
-def make_error_result(error_code: ErrorCode, message: str, image_path: Optional[str] = None) -> Dict:
+def make_error_result(error_code: ErrorCode, message: str, image_path: str | None = None) -> dict:
     """Build a standardized error result dict for a failed extraction.
 
     Args:
@@ -36,7 +36,7 @@ def make_error_result(error_code: ErrorCode, message: str, image_path: Optional[
         A dict with keys ``success`` (False), ``error_code``, ``error``, and
         optionally ``image_path``.
     """
-    result: Dict = {
+    result: dict = {
         "success": False,
         "error_code": error_code.value,
         "error": message,
@@ -55,22 +55,22 @@ class ProcessingResult:
     details.
     """
 
-    image_path: Optional[str] = None
-    filename: Optional[str] = None
-    b64: Optional[str] = None
+    image_path: str | None = None
+    filename: str | None = None
+    b64: str | None = None
     success: bool = False
-    model: Optional[str] = None
-    prompt: Optional[str] = None
-    response: Optional[str] = None
-    parsed: Optional[Dict] = None
-    total_duration_ms: Optional[float] = None
-    eval_count: Optional[int] = None
-    done: Optional[bool] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None
-    embedding_error: Optional[str] = None
+    model: str | None = None
+    prompt: str | None = None
+    response: str | None = None
+    parsed: dict | None = None
+    total_duration_ms: float | None = None
+    eval_count: int | None = None
+    done: bool | None = None
+    error: str | None = None
+    error_code: str | None = None
+    embedding_error: str | None = None
 
-    def as_dict(self) -> Dict:
+    def as_dict(self) -> dict:
         """Return a dict with all non-None fields for serialization."""
         result = {}
         for field_name in self.__dataclass_fields__:
@@ -89,7 +89,7 @@ class BasePhotoExtractor(ABC):
         port: int = 11434,
         model: str = DEFAULT_LLM_MODEL,
         timeout: int = 120,
-        default_prompt: Optional[str] = None,
+        default_prompt: str | None = None,
     ):
         """Initialise the extractor with connection and model parameters.
 
@@ -108,12 +108,14 @@ class BasePhotoExtractor(ABC):
         self.default_prompt = default_prompt or DEFAULT_PROMPT
 
     @abstractmethod
-    def extract(self, image_path: Union[str, Path], prompt: Optional[str] = None, options: Optional[Dict] = None) -> ProcessingResult:
+    def extract(
+        self, image_path: str | Path, prompt: str | None = None, options: dict | None = None
+    ) -> ProcessingResult:
         """Extract features from a single image file. Returns ProcessingResult."""
         ...
 
     @abstractmethod
-    def extract_b64(self, image_b64: str, prompt: Optional[str] = None, options: Optional[Dict] = None) -> ProcessingResult:
+    def extract_b64(self, image_b64: str, prompt: str | None = None, options: dict | None = None) -> ProcessingResult:
         """Extract features from an image provided as a base64 string. Returns ProcessingResult."""
         ...
 
@@ -125,7 +127,7 @@ class BasePhotoExtractor(ABC):
 
 class LLMChatClient(ABC):
     """Abstract interface for pluggable LLM chat clients.
-    
+
     This interface provides a clean abstraction for chat-based LLM interactions,
     allowing different backends (Ollama, etc.) to be used interchangeably without
     the calling code needing to know which backend is being used.
@@ -156,19 +158,19 @@ class LLMChatClient(ABC):
     def chat(
         self,
         message: str,
-        system_prompt: Optional[str] = None,
-        history: Optional[list] = None,
+        system_prompt: str | None = None,
+        history: list | None = None,
     ) -> str:
         """Send a chat message to the LLM and return the response.
-        
+
         Args:
             message: The user message/prompt.
             system_prompt: Optional system prompt to guide the LLM.
             history: Optional chat history for conversation context.
-            
+
         Returns:
             The LLM's response text.
-            
+
         Raises:
             requests.exceptions.RequestException: If the request fails.
         """
@@ -177,8 +179,8 @@ class LLMChatClient(ABC):
     def chat_stream(
         self,
         message: str,
-        system_prompt: Optional[str] = None,
-        history: Optional[list] = None,
+        system_prompt: str | None = None,
+        history: list | None = None,
     ) -> Generator[str, None, None]:
         """Stream a chat response from the LLM, yielding incremental text chunks.
 
@@ -204,12 +206,10 @@ class LLMChatClient(ABC):
 
 # Public API exports
 __all__ = [
-    "ErrorCode",
-    "make_error_result",
-    "ProcessingResult",
     "DEFAULT_PROMPT",
     "BasePhotoExtractor",
+    "ErrorCode",
     "LLMChatClient",
+    "ProcessingResult",
+    "make_error_result",
 ]
-
-

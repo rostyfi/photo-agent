@@ -1,8 +1,8 @@
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
 
 from src.interfaces import BasePhotoExtractor
 
-_backend_factories: Dict[str, Callable[..., BasePhotoExtractor]] = {}
+_backend_factories: dict[str, Callable[..., BasePhotoExtractor]] = {}
 
 
 def register_backend(name: str, factory: Callable[..., BasePhotoExtractor]) -> None:
@@ -10,7 +10,7 @@ def register_backend(name: str, factory: Callable[..., BasePhotoExtractor]) -> N
     _backend_factories[name] = factory
 
 
-def get_backend(name: str) -> Optional[Callable[..., BasePhotoExtractor]]:
+def get_backend(name: str) -> Callable[..., BasePhotoExtractor] | None:
     """Return the factory for a registered backend, or None if not found."""
     return _backend_factories.get(name)
 

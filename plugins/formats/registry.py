@@ -5,8 +5,8 @@ callable for one or more file extensions. The ``get_reader`` function looks
 up the appropriate reader for a given suffix.
 """
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 _readers: dict[str, Callable[[Path], bytes]] = {}
 

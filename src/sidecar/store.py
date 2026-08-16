@@ -1,18 +1,17 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Optional
 
 
 class AbstractSidecarStore(ABC):
     """Abstract interface for sidecar persistence."""
 
     @abstractmethod
-    def save(self, image_path: str, result: Dict) -> str:
+    def save(self, image_path: str, result: dict) -> str:
         """Persist an extraction result dict and return the sidecar path."""
         ...
 
     @abstractmethod
-    def load(self, image_path: str) -> Optional[Dict]:
+    def load(self, image_path: str) -> dict | None:
         """Read and parse an extraction result for the given image, or None."""
         ...
 

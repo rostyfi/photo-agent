@@ -7,23 +7,20 @@ A lightweight Python application for extracting structured features, description
 - Connect to an Ollama instance via configurable host/port
 - Extract structured features from single or multiple images
 - **Process entire folders (recursive or flat) from the CLI**
-- **Process entire server-side folders via the web UI**
+- **Process server-side folders via chat commands** in the web UI (`/process`, `/scan`)
 - Support for custom prompts and model options
 - Automatic JSON parsing of model responses
 - Batch processing with progress logging and resume support
 - **Simple database-based tracking** — replaces complex WAL system with straightforward SQLite tracking
 - Health check to verify Ollama availability
 - **Metadata extraction** — automatic EXIF, IPTC, and XMP metadata extraction from images
-- **Visual thumbnail previews** in the web UI — browse folder contents, search results, and tag-cloud results with image thumbnails; click any thumbnail to open a detail modal with a larger preview and extracted metadata.
+- **Visual thumbnail previews** in the web UI — chat results render as clickable image thumbnails; click any thumbnail to open a detail modal with a larger preview and extracted metadata.
 - **Fullscreen photo viewer** — from the detail modal, open a full-viewport viewer with navigation arrows, keyboard controls, and a toggleable metadata overlay for high-resolution browsing.
-- **Web-based UI via Dash** for drag-and-drop image processing
-- **Full-text search (FTS5)** over extracted descriptions, subjects, tags, and more from the web UI
-- **Tag cloud browsing** — visually explore photos by tag frequency, then click tags to chain multiple filters together with AND logic. Active filters appear as removable pills and the result set narrows to only photos containing every selected tag. Changing folder clears the chain.
+- **Web-based UI via Dash** centered on a chat interface
+- **Full-text search (FTS5)** over extracted descriptions, subjects, tags, and more, driven from the chat interface
 - **Vector embedding support** — generate vector embeddings for images using Ollama's `/api/embeddings` endpoint and find visually similar photos using cosine similarity with sqlite-vec
 - **Find Similar** — click "Find Similar" in the detail modal or fullscreen viewer to discover visually similar images in your collection
-- **Semantic search** — upload an image to find similar photos in your collection via the web UI
-- **Closest Photos** — type a natural language description (e.g., "a dog running on the beach") to find the top 10 most semantically similar photos in the current folder using vector embeddings
-- **Chat with Ollama** — interact directly with your Ollama LLM via a simple chat interface in the web UI; use `/about` to learn about the agent
+- **Chat with Ollama** — interact directly with your Ollama LLM via the web UI chat; use `/about`, `/tools`, `/find`, `/count`, `/scan`, `/process`, `/status` to drive the agent
 - **Chat API** — REST endpoint at `POST /_api/chat` for programmatic access to the LLM
 
 ## Prerequisites
@@ -106,7 +103,7 @@ Run the one-command setup script:
 
 Then open [http://localhost:8050](http://localhost:8050).
 
-**Tip:** When you pass a folder to `setup.sh`, it automatically creates a temporary `docker-compose.override.yml` that mounts your folder into the container as `/photos`. This makes it easy to process that folder via the web UI by entering `/photos` in the **Process Server Folder** field.
+**Tip:** When you pass a folder to `setup.sh`, it automatically creates a temporary `docker-compose.override.yml` that mounts your folder into the container as `/photos`. You can then point the agent at `/photos` (via the `LOCAL_PHOTO_AGENT_FOLDER` setting or a chat `/scan /photos` command) to process that folder.
 
 ### Manual Docker commands
 
@@ -125,14 +122,14 @@ docker compose down
 
 ### Mounting a folder for processing inside Docker
 
-If you want to process photos that live on the host via the **Process Server Folder** web UI, mount them into the container:
+If you want to process photos that live on the host via the web UI chat, mount them into the container:
 
 ```yaml
 volumes:
   - /path/on/host:/photos
 ```
 
-Then enter `/photos` in the folder path field on the web page.
+Then point the agent at `/photos` (via `LOCAL_PHOTO_AGENT_FOLDER` or a chat `/scan /photos` command).
 
 ## Command-Line Usage
 
@@ -214,26 +211,29 @@ The `features.db` SQLite database includes:
 Open [http://localhost:8050](http://localhost:8050) after starting the app.
 
 1. **Settings**: Enter the LLM host, port, and model.
-2. **Upload Images**: Drag & drop or select files, then click **Extract Features**
-3. **Process Server Folder**: Type an absolute folder path (e.g. `/photos`), optionally tick *Scan sub-folders*, then click **Process Folder**.  
-   The folder must be readable by the server/container running the app.
+2. **Chat**: The main UI is a chat interface with your Ollama LLM. Drive the agent with slash commands:
+   - `/scan` — list processable images in the current folder
+   - `/process` — process pending images in the current folder
+   - `/find <query>` — full-text search over descriptions, subjects, and tags
+   - `/count` — count processed/unprocessed images
+   - `/status` — show batch processing status
+   - `/tags` — list extracted tags
+   - `/about`, `/tools` — agent info and available tools
 
-   **Database storage:** When processing a folder via the web UI, results are stored in a SQLite `features.db` database inside `.local-photo-agent/` in the same folder.
-4. **Search Photos** (below SQL Explorer): After processing a folder, use the search card to find photos by description, subjects, or tags via full-text search.
-5. **Tag Cloud** (below Search Photos): After processing a folder, click **Load Tag Cloud** to see a visual cloud of all extracted tags sized by frequency. Click any tag to add it as an active filter, then click additional tags to narrow the results with **AND** semantics. Active filters appear as removable pill badges above the cloud. Click a pill (or the tag again) to remove it, or press **Clear filters** to reset the chain. Changing the folder automatically clears the tag chain. Click any thumbnail to open the detail modal or fullscreen viewer — navigation arrows will only cycle through the currently filtered subset.
-6. **Closest Photos** (below Tag Cloud): Enter a natural language description (e.g., "a dog running on the beach") and click **Find Similar** to discover the top 10 most semantically similar photos in the current folder using vector embeddings. Each result shows a similarity percentage. Click any thumbnail to open the detail modal or fullscreen viewer.
-7. **SQL Explorer**: Run raw SQL queries against the per-folder `features.db` SQLite database for advanced exploration.
-8. **Metadata Tester**: Test metadata extraction from uploaded images to verify EXIF, IPTC, and XMP data extraction.
+   **Live progress bar:** When you run `/process` or `/status`, a real-time progress bar appears above the chat input. It polls the batch state every ~1.5s, shows processed/total and a percentage, and hides itself a few seconds after the batch completes or is aborted.
+
+   **Database storage:** When a folder is processed, results are stored in a SQLite `features.db` database inside `.local-photo-agent/` in the same folder.
+3. **SQL Explorer**: Run raw SQL queries against the per-folder `features.db` SQLite database for advanced exploration.
+4. **Metadata Tester**: Test metadata extraction from uploaded images to verify EXIF, IPTC, and XMP data extraction.
 
 ### Vector Embedding Features in Web UI
 
 - **Find Similar** — In the photo detail modal, click "Find Similar" to display a carousel of visually similar images with similarity scores
 - **Fullscreen Similar** — In the fullscreen viewer, click "Find Similar" to find and navigate through similar photos
 - **Embedding Status** — The detail modal shows whether an embedding is available for the current image
-- **Closest Photos** — Type a natural language query to find semantically similar photos by description using vector embeddings
 - **Performance** — Similarity search typically completes in <500ms for collections of 10,000+ images (using sqlite-vec)
 
-> **Preview & Detail Modal:** When you scan a folder, the file list appears as a grid of clickable thumbnails. Click any thumbnail (in the folder grid, search results, or tag-cloud results) to open a modal with a larger image preview and the extracted metadata (description, subjects, objects, colors, setting, mood, tags). If an image has not been processed yet, the modal shows a "Not yet processed" placeholder.
+> **Preview & Detail Modal:** Click any thumbnail returned by the chat to open a modal with a larger image preview and the extracted metadata (description, subjects, objects, colors, setting, mood, tags). If an image has not been processed yet, the modal shows a "Not yet processed" placeholder.
 >
 > **Fullscreen Viewer:** From the detail modal, click the **Fullscreen** button to open a full-viewport photo browser with a black background. Use the left/right arrow buttons (or keyboard arrow keys) to navigate through the album. A **Toggle Info** button shows or hides a semi-transparent overlay with the extracted description, subjects, and tags. You can also press **`i`** on the keyboard to toggle the overlay when the fullscreen viewer is open.
 
@@ -245,6 +245,7 @@ The web application (`app.py`) provides several REST API endpoints for programma
 |--------|----------|-------------|
 | GET | `/preview?path=<path>&size=<size>` | Get a resized image thumbnail (supports HEIC/HEIF conversion) |
 | POST | `/_api/chat` | Send a chat message to Ollama and get a response |
+| GET | `/_api/process_status?folder=<folder>` | Live batch processing progress (status, total, completed) for the chat progress bar |
 | POST | `/_api/find_similar` | Find similar images using vector embeddings |
 | GET | `/_api/test_rest_vector_search` | Test REST-based vector search functionality |
 | GET | `/_api/test_store_vector` | Test storing a vector in the database |
@@ -363,12 +364,7 @@ extractor = create_extractor(host="192.168.0.150", port=11434, model="gemma4:e2b
 config = ProcessingConfig.from_env()  # Or specify individual parameters
 
 # Process multiple images sequentially
-results = process_paths(
-    ["photo1.jpg", "photo2.jpg"],
-    extractor,
-    prompt="Describe this photo",
-    resume=False
-)
+results = process_paths(["photo1.jpg", "photo2.jpg"], extractor, prompt="Describe this photo", resume=False)
 
 for result in results["results"]:
     print(result.get("image_path"), result.get("success"))

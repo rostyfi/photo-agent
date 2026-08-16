@@ -11,15 +11,15 @@ triggers) and handles extension loading consistently.
 
 import logging
 import sqlite3
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Generator, Union
 
 logger = logging.getLogger(__name__)
 
 
 def open_connection(
-    db_path: Union[str, Path],
+    db_path: str | Path,
     *,
     enable_extensions: bool = False,
     ensure_parent: bool = True,
@@ -58,16 +58,14 @@ def open_connection(
             logger.debug("Extension loading enabled for connection")
         except sqlite3.Error as e:
             logger.debug("Could not enable extension loading: %s", e)
-    try:
+    with suppress(sqlite3.Error):
         conn.execute("PRAGMA recursive_triggers = ON")
-    except sqlite3.Error:
-        pass
     return conn
 
 
 @contextmanager
 def connect(
-    db_path: Union[str, Path],
+    db_path: str | Path,
     *,
     enable_extensions: bool = False,
 ) -> Generator[sqlite3.Connection, None, None]:

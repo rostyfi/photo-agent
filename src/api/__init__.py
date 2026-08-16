@@ -10,12 +10,12 @@ Available handlers:
 """
 
 from .chat import api_chat_handler, api_chat_stream_handler
-from .vectors import register_vectors_blueprint
 from .debug import register_debug_blueprint
+from .vectors import register_vectors_blueprint
 
 __all__ = [
     "api_chat_handler",
     "api_chat_stream_handler",
-    "register_vectors_blueprint",
     "register_debug_blueprint",
+    "register_vectors_blueprint",
 ]

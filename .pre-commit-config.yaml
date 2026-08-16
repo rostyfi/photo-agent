@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Mypy runs in advisory mode: it reports type errors but does not block
+  # commits. There is a known baseline of ~65 pre-existing type errors.
+  # Remove `|| true` once those are resolved to make it a blocking gate.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (advisory)
+        entry: bash -c 'mypy --config-file=pyproject.toml src plugins main.py app.py || true'
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: pytest-cov
+        name: pytest with coverage
+        entry: python3 -m pytest --cov=src --cov=plugins --cov-report=term-missing tests/
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]

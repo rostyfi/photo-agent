@@ -6,8 +6,8 @@ Ollama v0.1.0+ is required for embedding generation.
 
 import logging
 
-from src.embeddings.registry import register_embedding_backend
 from src.embeddings.ollama import OllamaEmbeddingGenerator
+from src.embeddings.registry import register_embedding_backend
 
 logger = logging.getLogger(__name__)
 

@@ -76,9 +76,7 @@ def register_debug_blueprint(server, config: AppConfig) -> Blueprint:
                             "dimension": len(retrieved),
                         }
 
-                return _error(
-                    "Embedding not found after save", 500, vec_initialized=vec_init
-                )
+                return _error("Embedding not found after save", 500, vec_initialized=vec_init)
             finally:
                 db.close()
         except Exception as e:
@@ -116,13 +114,12 @@ def register_debug_blueprint(server, config: AppConfig) -> Blueprint:
 
                 if len(retrieved) != len(test_vector):
                     return _error(
-                        "Dimension mismatch: expected %d, got %d"
-                        % (len(test_vector), len(retrieved)),
+                        f"Dimension mismatch: expected {len(test_vector)}, got {len(retrieved)}",
                         500,
                     )
 
                 mismatches = []
-                for i, (orig, retr) in enumerate(zip(test_vector, retrieved)):
+                for i, (orig, retr) in enumerate(zip(test_vector, retrieved, strict=False)):
                     if abs(orig - retr) > 1e-6:
                         mismatches.append({"index": i, "original": orig, "retrieved": retr})
                         if len(mismatches) > 5:
@@ -142,8 +139,7 @@ def register_debug_blueprint(server, config: AppConfig) -> Blueprint:
                 if mismatches:
                     result["status"] = "warning"
                     result["message"] = (
-                        "Vector roundtrip passed but %d values differ slightly (float precision)"
-                        % len(mismatches)
+                        f"Vector roundtrip passed but {len(mismatches)} values differ slightly (float precision)"
                     )
                     result["mismatches"] = mismatches[:5]
 
@@ -199,9 +195,7 @@ def register_debug_blueprint(server, config: AppConfig) -> Blueprint:
                 "test_results": {
                     "found_results": len(similar),
                     "test_passed": test_passed,
-                    "top_results": [
-                        {"image_path": p, "score": s} for p, s in similar[:3]
-                    ],
+                    "top_results": [{"image_path": p, "score": s} for p, s in similar[:3]],
                 },
             }
         except Exception as e:

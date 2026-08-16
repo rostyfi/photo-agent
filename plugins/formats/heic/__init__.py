@@ -1,10 +1,11 @@
-from .converter import convert_heic_to_jpeg_bytes, validate_heic_integrity
 from plugins.formats.registry import register_format
+
+from .converter import convert_heic_to_jpeg_bytes, validate_heic_integrity
 
 
 def _read_heic(path):
     """Read a HEIC/HEIF file and return JPEG bytes via pillow-heif conversion.
-    
+
     Runs integrity validation first. Raises ValueError if the file appears
     truncated or corrupted.
     """

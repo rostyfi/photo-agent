@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from plugins.llm import create_extractor
 from src.callbacks.common import (
     _db_session,
     _get_extractor,
@@ -10,14 +11,12 @@ from src.callbacks.common import (
     _open_modal,
 )
 from src.config import AppConfig
-from plugins.llm import create_extractor
 
 
 class TestDbSession(unittest.TestCase):
     def test_yields_none_when_no_db(self):
-        with tempfile.TemporaryDirectory() as td:
-            with _db_session(td) as db:
-                self.assertIsNone(db)
+        with tempfile.TemporaryDirectory() as td, _db_session(td) as db:
+            self.assertIsNone(db)
 
     def test_yields_db_when_file_exists(self):
         with tempfile.TemporaryDirectory() as td:

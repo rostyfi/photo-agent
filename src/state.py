@@ -12,36 +12,32 @@ Per-job cancellation is also supported via ``cancel_job`` and
 ``is_job_cancelled``, which scope a shutdown event to a specific job ID.
 """
 
+import contextlib
 import os
 import tempfile
 import threading
 from pathlib import Path
-from typing import Dict
 
 _SHUTDOWN_FLAG_PATH = Path(tempfile.gettempdir()) / "local_photo_agent_shutdown.flag"
 
 _shutdown_event = threading.Event()
 
-_job_cancel_events: Dict[str, threading.Event] = {}
+_job_cancel_events: dict[str, threading.Event] = {}
 _job_cancel_lock = threading.Lock()
 
 
 def request_shutdown():
     """Signal all background processing loops to stop."""
     _shutdown_event.set()
-    try:
+    with contextlib.suppress(OSError):
         _SHUTDOWN_FLAG_PATH.write_text("", encoding="utf-8")
-    except OSError:
-        pass
 
 
 def reset_shutdown_event():
     """Clear the shutdown signal (called when a new Process-All starts)."""
     _shutdown_event.clear()
-    try:
+    with contextlib.suppress(FileNotFoundError, OSError):
         os.unlink(_SHUTDOWN_FLAG_PATH)
-    except (FileNotFoundError, OSError):
-        pass
 
 
 def is_shutdown_requested():
@@ -74,5 +70,3 @@ def _remove_job_cancel(job_id: str) -> None:
     """Remove the cancellation tracking for a completed job. (Internal: used only by tests)"""
     with _job_cancel_lock:
         _job_cancel_events.pop(job_id, None)
-
-

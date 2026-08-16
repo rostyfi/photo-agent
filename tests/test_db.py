@@ -28,9 +28,7 @@ class TestInitDb:
             db = FeaturesDatabase(db_path)
             conn = db.init_db()
 
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_features'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='raw_features'")
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "raw_features"
@@ -59,9 +57,7 @@ class TestInitDb:
             db = FeaturesDatabase(db_path)
             conn = db.init_db()
 
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='extracted_features'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='extracted_features'")
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "extracted_features"
@@ -73,9 +69,7 @@ class TestInitDb:
             db = FeaturesDatabase(db_path)
             conn = db.init_db()
 
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='feature_tags'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feature_tags'")
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "feature_tags"
@@ -139,9 +133,7 @@ class TestSchema:
             db.close()
 
             conn = sqlite3.connect(str(db_path))
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_feature_tags_tag'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_feature_tags_tag'")
             assert cursor.fetchone() is not None
             conn.close()
 
@@ -153,9 +145,7 @@ class TestSchema:
             db.close()
 
             conn = sqlite3.connect(str(db_path))
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='extracted_features_fts'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='extracted_features_fts'")
             row = cursor.fetchone()
             conn.close()
 
@@ -209,18 +199,24 @@ class TestSaveExtraction:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {
-                    "description": "A beach sunset",
-                    "subjects": ["ocean", "sun"],
-                    "mood": "calm",
-                    "tags": ["beach", "sunset"],
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {
+                        "description": "A beach sunset",
+                        "subjects": ["ocean", "sun"],
+                        "mood": "calm",
+                        "tags": ["beach", "sunset"],
+                    },
                 },
-            })
+            )
 
             conn = sqlite3.connect(str(db_path))
-            cursor = conn.execute("SELECT description, subjects, mood, tags FROM extracted_features WHERE image_path = ?", ("/photos/a.jpg",))
+            cursor = conn.execute(
+                "SELECT description, subjects, mood, tags FROM extracted_features WHERE image_path = ?",
+                ("/photos/a.jpg",),
+            )
             row = cursor.fetchone()
             conn.close()
 
@@ -233,10 +229,13 @@ class TestSaveExtraction:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset"]},
+                },
+            )
 
             conn = sqlite3.connect(str(db_path))
             cursor = conn.execute("SELECT tag FROM feature_tags WHERE image_path = ?", ("/photos/a.jpg",))
@@ -312,14 +311,20 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "sunset at the beach", "tags": ["beach"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"description": "mountain hike", "tags": ["nature"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "sunset at the beach", "tags": ["beach"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "mountain hike", "tags": ["nature"]},
+                },
+            )
 
             # FTS may need a tiny delay or just works immediately.
             results = db.search_features("beach")
@@ -331,10 +336,13 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "a photo", "tags": ["beach", "sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "a photo", "tags": ["beach", "sunset"]},
+                },
+            )
 
             results = db.search_features("sunset")
             assert len(results) == 1
@@ -354,18 +362,27 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["mountain", "sunset"]},
-            })
-            db.save_extraction("/photos/c.jpg", {
-                "success": True,
-                "parsed": {"tags": ["sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["mountain", "sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/c.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["sunset"]},
+                },
+            )
 
             freqs = db.list_tag_frequencies()
             assert freqs == [("sunset", 3), ("beach", 1), ("mountain", 1)]
@@ -374,14 +391,20 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["a", "b", "c"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["b", "c", "d"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["a", "b", "c"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["b", "c", "d"]},
+                },
+            )
 
             freqs = db.list_tag_frequencies(limit=2)
             assert len(freqs) == 2
@@ -392,14 +415,20 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["mountain", "sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["mountain", "sunset"]},
+                },
+            )
 
             restricted = db.list_tag_frequencies_restricted([])
             assert restricted == [("sunset", 2), ("beach", 1), ("mountain", 1)]
@@ -409,18 +438,27 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset", "ocean"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sand"]},
-            })
-            db.save_extraction("/photos/c.jpg", {
-                "success": True,
-                "parsed": {"tags": ["mountain", "sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset", "ocean"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sand"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/c.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["mountain", "sunset"]},
+                },
+            )
 
             restricted = db.list_tag_frequencies_restricted(["beach"])
             # 'beach' itself should be excluded; only tags from photos with 'beach'
@@ -437,18 +475,27 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset", "ocean"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset", "sand"]},
-            })
-            db.save_extraction("/photos/c.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "hike"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset", "ocean"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset", "sand"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/c.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "hike"]},
+                },
+            )
 
             restricted = db.list_tag_frequencies_restricted(["beach", "sunset"])
             tags_only = [tag for tag, _ in restricted]
@@ -463,14 +510,20 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["Beach", "Sunset"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"tags": ["BENCH", "Sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["Beach", "Sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["BENCH", "Sunset"]},
+                },
+            )
 
             restricted = db.list_tag_frequencies_restricted(["beach"])
             tags_only = [tag for tag, _ in restricted]
@@ -489,18 +542,27 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/1.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "a"]},
-            })
-            db.save_extraction("/photos/2.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "b"]},
-            })
-            db.save_extraction("/photos/3.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "c"]},
-            })
+            db.save_extraction(
+                "/photos/1.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "a"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/2.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "b"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/3.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "c"]},
+                },
+            )
 
             restricted = db.list_tag_frequencies_restricted(["beach"], limit=2)
             assert len(restricted) == 2
@@ -509,14 +571,20 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "beach day", "tags": ["beach"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"description": "mountain day", "tags": ["mountain"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "beach day", "tags": ["beach"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "mountain day", "tags": ["mountain"]},
+                },
+            )
 
             results = db.get_features_by_tag("beach")
             assert len(results) == 1
@@ -527,24 +595,33 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach", "sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach", "sunset"]},
+                },
+            )
             assert db.get_features_by_tags([]) == []
 
     def test_get_features_by_tags_single_tag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "beach sunset", "tags": ["beach", "sunset"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"description": "mountain", "tags": ["mountain"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "beach sunset", "tags": ["beach", "sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "mountain", "tags": ["mountain"]},
+                },
+            )
 
             results = db.get_features_by_tags(["beach"])
             assert len(results) == 1
@@ -554,18 +631,27 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "beach sunset", "tags": ["beach", "sunset"]},
-            })
-            db.save_extraction("/photos/b.jpg", {
-                "success": True,
-                "parsed": {"description": "beach day", "tags": ["beach"]},
-            })
-            db.save_extraction("/photos/c.jpg", {
-                "success": True,
-                "parsed": {"description": "sunset mountain", "tags": ["sunset", "mountain"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "beach sunset", "tags": ["beach", "sunset"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "beach day", "tags": ["beach"]},
+                },
+            )
+            db.save_extraction(
+                "/photos/c.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "sunset mountain", "tags": ["sunset", "mountain"]},
+                },
+            )
 
             results = db.get_features_by_tags(["beach", "sunset"])
             assert len(results) == 1
@@ -575,10 +661,13 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "beach sunset", "tags": ["Beach", "Sunset"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "beach sunset", "tags": ["Beach", "Sunset"]},
+                },
+            )
 
             results = db.get_features_by_tags(["beach", "SUNSET"])
             assert len(results) == 1
@@ -588,10 +677,13 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"tags": ["beach"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"tags": ["beach"]},
+                },
+            )
             assert db.get_features_by_tags(["mountain"]) == []
 
     def test_get_features_by_tags_missing_db(self):
@@ -604,11 +696,14 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "model": "m1",
-                "parsed": {"description": "test", "tags": ["tag1", "tag2"]},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "model": "m1",
+                    "parsed": {"description": "test", "tags": ["tag1", "tag2"]},
+                },
+            )
 
             summary = db.get_feature_summary("/photos/a.jpg")
             assert summary is not None
@@ -628,10 +723,13 @@ class TestQueryHelpers:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "rebuild test"},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "rebuild test"},
+                },
+            )
             db.rebuild_fts_index()
             results = db.search_features("rebuild")
             assert len(results) == 1
@@ -642,10 +740,13 @@ class TestQueryHelpers:
             db = FeaturesDatabase(db_path)
             db.init_db()
             db._fts5_available = False
-            db.save_extraction("/photos/a.jpg", {
-                "success": True,
-                "parsed": {"description": "fallback test"},
-            })
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": {"description": "fallback test"},
+                },
+            )
             assert db.search_features("fallback") == []
             db.rebuild_fts_index()  # should be a no-op
 
@@ -797,9 +898,7 @@ class TestImageEmbeddings:
             db = FeaturesDatabase(db_path)
             conn = db.init_db()
 
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='image_embeddings'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='image_embeddings'")
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "image_embeddings"
@@ -857,7 +956,7 @@ class TestImageEmbeddings:
                 INSERT INTO image_embeddings (image_path, model_name, embedding_dimension, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                ("/test.jpg", "model1", 512, "2024-01-01")
+                ("/test.jpg", "model1", 512, "2024-01-01"),
             )
 
             # This should not raise an error due to ON CONFLICT clause
@@ -869,13 +968,12 @@ class TestImageEmbeddings:
                     embedding_dimension=excluded.embedding_dimension,
                     created_at=excluded.created_at
                 """,
-                ("/test.jpg", "model1", 384, "2024-01-02")
+                ("/test.jpg", "model1", 384, "2024-01-02"),
             )
 
             # Check that only one row exists
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM image_embeddings WHERE image_path = ? AND model_name = ?",
-                ("/test.jpg", "model1")
+                "SELECT COUNT(*) FROM image_embeddings WHERE image_path = ? AND model_name = ?", ("/test.jpg", "model1")
             )
             count = cursor.fetchone()[0]
             assert count == 1
@@ -883,7 +981,7 @@ class TestImageEmbeddings:
             # Check that the second insert updated the row
             cursor = conn.execute(
                 "SELECT embedding_dimension FROM image_embeddings WHERE image_path = ? AND model_name = ?",
-                ("/test.jpg", "model1")
+                ("/test.jpg", "model1"),
             )
             dimension = cursor.fetchone()[0]
             assert dimension == 384
@@ -900,18 +998,15 @@ class TestImageEmbeddings:
             # Insert embeddings from different models
             conn.execute(
                 "INSERT INTO image_embeddings (image_path, model_name, embedding_dimension, created_at) VALUES (?, ?, ?, ?)",
-                ("/test.jpg", "model1", 512, "2024-01-01")
+                ("/test.jpg", "model1", 512, "2024-01-01"),
             )
             conn.execute(
                 "INSERT INTO image_embeddings (image_path, model_name, embedding_dimension, created_at) VALUES (?, ?, ?, ?)",
-                ("/test.jpg", "model2", 384, "2024-01-01")
+                ("/test.jpg", "model2", 384, "2024-01-01"),
             )
 
             # Check both exist
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM image_embeddings WHERE image_path = ?",
-                ("/test.jpg",)
-            )
+            cursor = conn.execute("SELECT COUNT(*) FROM image_embeddings WHERE image_path = ?", ("/test.jpg",))
             count = cursor.fetchone()[0]
             assert count == 2
 
@@ -934,11 +1029,12 @@ class TestImageEmbeddings:
 
     def test_binary_vector_wrong_size(self):
         """Test that blob_to_vector raises on wrong blob size."""
-        from src.sidecar.database import FeaturesDatabase
-        
         # Create a blob with wrong size
         import struct
+
+        from src.sidecar.database import FeaturesDatabase
+
         blob = struct.pack("!f", 1.0)  # Only 1 float
-        
+
         with pytest.raises(ValueError):
             FeaturesDatabase.blob_to_vector(blob, 2)  # Expecting 2 floats

@@ -114,6 +114,7 @@ class TestPhotoList(unittest.TestCase):
 
         # Use the new database-based tracker instead of WAL file
         from src.simple_processing_tracker import SimpleProcessingTracker
+
         tracker = SimpleProcessingTracker(str(self.base))
         tracker.mark_completed(str(self.base / "photo.jpg"))
 
@@ -130,6 +131,7 @@ class TestPhotoList(unittest.TestCase):
 
         # Use the new database-based tracker instead of WAL file
         from src.simple_processing_tracker import SimpleProcessingTracker
+
         tracker = SimpleProcessingTracker(str(self.base))
         tracker.mark_completed(str(self.base / "photo.jpg"))
 
@@ -139,7 +141,6 @@ class TestPhotoList(unittest.TestCase):
             exclude_processed_from=str(self.base),
         )
         self.assertEqual(len(result), 0)
-
 
     def test_exclude_processed_from_db(self):
         self._create_file("photo.jpg")

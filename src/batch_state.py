@@ -11,10 +11,10 @@ After a batch completes, the final ``"done"`` entry here holds timing stats
 per-image completion list so that the next run can resume from where it
 stopped.
 """
+
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def write_batch_state(folder: str, status: str, total: int, completed: int, **ex
     logger.debug("Batch state: %s %s/%s", status, completed, total)
 
 
-def read_batch_state(folder: str) -> Optional[Dict]:
+def read_batch_state(folder: str) -> dict | None:
     """Read the current batch processing summary for a folder.
 
     Returns None if no state file exists or if the file is unreadable.

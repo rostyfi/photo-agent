@@ -1,3 +1,3 @@
-from .db import FeaturesDatabase, DatabaseSidecarStore
+from .db import DatabaseSidecarStore, FeaturesDatabase
 
-__all__ = ["FeaturesDatabase", "DatabaseSidecarStore"]
+__all__ = ["DatabaseSidecarStore", "FeaturesDatabase"]

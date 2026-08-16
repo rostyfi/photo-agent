@@ -4,14 +4,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from plugins.formats.image import read_image_bytes, _detect_extension_by_magic
-from plugins.formats.registry import register_format, get_reader, unregister_format
 from plugins.formats.heic.converter import (
+    HEIF_AVAILABLE,
+    PIL_AVAILABLE,
     convert_heic_to_jpeg_bytes,
     validate_heic_integrity,
-    PIL_AVAILABLE,
-    HEIF_AVAILABLE,
 )
+from plugins.formats.image import _detect_extension_by_magic, read_image_bytes
+from plugins.formats.registry import get_reader, register_format, unregister_format
 
 
 class TestImageBytesReading(unittest.TestCase):
@@ -64,6 +64,7 @@ class TestImageBytesReading(unittest.TestCase):
     def test_get_reader_registered(self):
         def dummy(path):
             return b""
+
         register_format((".testext",), dummy)
         self.assertIsNotNone(get_reader(".testext"))
         unregister_format((".testext",))
@@ -265,26 +266,31 @@ class TestHeicQualityFromEnv(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_default_quality(self):
         from plugins.formats.heic.converter import _env_quality
+
         self.assertEqual(_env_quality(), 95)
 
     @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "80"}, clear=True)
     def test_custom_quality(self):
         from plugins.formats.heic.converter import _env_quality
+
         self.assertEqual(_env_quality(), 80)
 
     @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "not_a_number"}, clear=True)
     def test_invalid_quality_falls_back(self):
         from plugins.formats.heic.converter import _env_quality
+
         self.assertEqual(_env_quality(), 95)
 
     @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "0"}, clear=True)
     def test_quality_below_1_clamped(self):
         from plugins.formats.heic.converter import _env_quality
+
         self.assertEqual(_env_quality(), 1)
 
     @patch.dict(os.environ, {"LOCAL_PHOTO_AGENT_HEIC_JPEG_QUALITY": "150"}, clear=True)
     def test_quality_above_100_clamped(self):
         from plugins.formats.heic.converter import _env_quality
+
         self.assertEqual(_env_quality(), 100)
 
 

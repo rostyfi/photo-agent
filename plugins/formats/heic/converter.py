@@ -3,16 +3,17 @@
 import io
 import os
 from pathlib import Path
-from typing import Optional, Union
 
 try:
     from PIL import Image
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
 
 try:
     from pillow_heif import register_heif_opener
+
     register_heif_opener()
     HEIF_AVAILABLE = True
 except ImportError:
@@ -33,7 +34,7 @@ def _env_quality() -> int:
         return _DEFAULT_QUALITY
 
 
-def validate_heic_integrity(image_path: Union[str, Path]) -> bool:
+def validate_heic_integrity(image_path: str | Path) -> bool:
     """Check if a HEIC/HEIF file has a valid signature and minimum size.
 
     Returns True if the file appears structurally sound, False otherwise.
@@ -51,14 +52,12 @@ def validate_heic_integrity(image_path: Union[str, Path]) -> bool:
             return False
         if header[4:8] != b"ftyp":
             return False
-        if header[8:12] not in (b"heic", b"heix", b"hevc", b"heim", b"heis", b"hevm", b"hevs", b"mif1", b"msf1"):
-            return False
-        return True
-    except (OSError, IOError):
+        return header[8:12] in (b"heic", b"heix", b"hevc", b"heim", b"heis", b"hevm", b"hevs", b"mif1", b"msf1")
+    except OSError:
         return False
 
 
-def convert_heic_to_jpeg_bytes(image_path: Union[str, Path], quality: Optional[int] = None) -> bytes:
+def convert_heic_to_jpeg_bytes(image_path: str | Path, quality: int | None = None) -> bytes:
     """
     Convert a HEIC/HEIF image to JPEG bytes.
 
@@ -72,13 +71,9 @@ def convert_heic_to_jpeg_bytes(image_path: Union[str, Path], quality: Optional[i
         raise FileNotFoundError(f"Image not found: {image_path}")
 
     if not PIL_AVAILABLE:
-        raise RuntimeError(
-            "HEIC/HEIF support requires Pillow. Install it: pip install pillow"
-        )
+        raise RuntimeError("HEIC/HEIF support requires Pillow. Install it: pip install pillow")
     if not HEIF_AVAILABLE:
-        raise RuntimeError(
-            "HEIC/HEIF support requires pillow-heif. Install it: pip install pillow-heif"
-        )
+        raise RuntimeError("HEIC/HEIF support requires pillow-heif. Install it: pip install pillow-heif")
 
     with Image.open(path) as img:
         exif = img.info.get("exif")

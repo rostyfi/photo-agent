@@ -5,17 +5,17 @@ Ollama v0.1.0+ is required for embedding generation.
 """
 
 import logging
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 # Registry of available embedding backends
-_embedding_backends: Dict[str, Callable] = {}
+_embedding_backends: dict[str, Callable] = {}
 
 
 def register_embedding_backend(name: str, factory: Callable) -> None:
     """Register an embedding backend factory function.
-    
+
     Args:
         name: The backend name (e.g., "ollama").
         factory: A callable that returns a BaseEmbeddingGenerator instance.
@@ -26,12 +26,12 @@ def register_embedding_backend(name: str, factory: Callable) -> None:
     logger.debug("Registered embedding backend: %s", name)
 
 
-def get_embedding_backend(name: str) -> Optional[Callable]:
+def get_embedding_backend(name: str) -> Callable | None:
     """Get the factory function for a registered embedding backend.
-    
+
     Args:
         name: The backend name to look up.
-        
+
     Returns:
         The factory callable, or None if not found.
     """
@@ -40,7 +40,7 @@ def get_embedding_backend(name: str) -> Optional[Callable]:
 
 def list_embedding_backends() -> list:
     """List all registered embedding backend names.
-    
+
     Returns:
         List of registered backend names.
     """
@@ -49,10 +49,10 @@ def list_embedding_backends() -> list:
 
 def unregister_embedding_backend(name: str) -> bool:
     """Unregister an embedding backend.
-    
+
     Args:
         name: The backend name to unregister.
-        
+
     Returns:
         True if the backend was found and unregistered, False otherwise.
     """

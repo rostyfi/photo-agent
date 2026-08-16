@@ -12,9 +12,9 @@ from dash import Input, Output, State, html
 
 from src.components import build_errors_display
 
-logger = logging.getLogger(__name__)
-
 from .common import _get_tracker
+
+logger = logging.getLogger(__name__)
 
 # Cache for failed entries to avoid re-reading every poll
 _TRACKER_FAILED_CACHE: dict = {}  # folder -> (failed_entries, mtime)
@@ -22,7 +22,7 @@ _TRACKER_FAILED_CACHE: dict = {}  # folder -> (failed_entries, mtime)
 
 def register_errors_callback(app):
     """Register callbacks for loading and displaying errors."""
-    
+
     @app.callback(
         [
             Output("errors-store", "data"),
@@ -39,13 +39,13 @@ def register_errors_callback(app):
         """Load failed images from simple tracker and display them."""
         if not folder:
             return dash.no_update, dash.no_update, dash.no_update
-        
+
         try:
             # Use cached tracker instance to get failed entries
             tracker = _get_tracker(folder)
             failed_entries = tracker.get_failed_files()
             _TRACKER_FAILED_CACHE[folder] = (failed_entries, 0)
-            
+
             # Build error list with additional info
             errors = []
             for entry in failed_entries:
@@ -56,13 +56,13 @@ def register_errors_callback(app):
                     "ts": "",  # Not stored in simple tracker
                 }
                 errors.append(error_dict)
-            
+
             # Update store
             new_data = {
                 "errors": errors,
                 "folder": folder,
             }
-            
+
             # Build count display
             count_display = html.Div(
                 [
@@ -70,12 +70,12 @@ def register_errors_callback(app):
                     html.Small(f" in {folder}", className="text-muted ms-2"),
                 ]
             )
-            
+
             # Build error list display
             errors_display = build_errors_display(errors, folder)
-            
+
             return new_data, count_display, errors_display
-            
+
         except Exception as e:
             logger.error("Failed to load errors for folder %s: %s", folder, e)
             error_display = html.Div(
@@ -91,7 +91,7 @@ def register_errors_callback(app):
                 className="mb-3",
             )
             return {"errors": [], "folder": folder}, html.Div("0 errors"), error_display
-    
+
     @app.callback(
         Output("errors-store", "data", allow_duplicate=True),
         Input("btn-clear-errors", "n_clicks"),
@@ -103,7 +103,7 @@ def register_errors_callback(app):
         if n_clicks:
             return {"errors": [], "folder": current_data.get("folder")}
         return dash.no_update
-    
+
     @app.callback(
         Output("errors-list", "children", allow_duplicate=True),
         Input("errors-store", "data"),
@@ -113,7 +113,7 @@ def register_errors_callback(app):
         """Update the errors display when store changes."""
         if not data:
             return dash.no_update
-        
+
         errors = data.get("errors", [])
         folder = data.get("folder", "")
         return build_errors_display(errors, folder)
@@ -126,19 +126,19 @@ def register_copy_error_callback(app):
         """
         function(n_clicks, data) {
             if (!n_clicks) { return window.dash_clientside.no_update; }
-            
+
             // Get the button that was clicked
             const triggered = dash_clientside.callback_context.triggered || [];
             if (triggered.length === 0) { return window.dash_clientside.no_update; }
-            
+
             const propId = triggered[0].prop_id;
             // Extract the index from the button ID like "{'type':'btn-copy-error','index':2}.n_clicks"
             const match = propId.match(/index":(\\d+)/);
             if (!match) { return window.dash_clientside.no_update; }
-            
+
             const index = parseInt(match[1]);
             const errors = data.errors || [];
-            
+
             if (index < errors.length) {
                 const errorMsg = errors[index].error_msg || "";
                 // Copy to clipboard
@@ -163,7 +163,7 @@ def register_copy_error_callback(app):
                     }
                 });
             }
-            
+
             return window.dash_clientside.no_update;
         }
         """,
