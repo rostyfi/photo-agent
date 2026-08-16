@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 
 class AbstractSidecarStore(ABC):
@@ -18,10 +17,4 @@ class AbstractSidecarStore(ABC):
     @abstractmethod
     def exists(self, image_path: str) -> bool:
         """Return True if a sidecar exists for the given image."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def sidecar_path(cls, image_path: str) -> Path:
-        """Return the expected storage path for a given image."""
         ...

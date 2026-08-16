@@ -2,7 +2,6 @@
 
 This module provides callbacks for:
 - Sending messages to the chat endpoint and receiving responses
-- Handling the /whoami tool command
 """
 
 import json
@@ -15,16 +14,6 @@ import requests
 from dash import Input, Output, State, html
 
 logger = logging.getLogger(__name__)
-
-
-def whoami_tool() -> str:
-    """Return the agent description for the /whoami command."""
-    return (
-        "I am the **Local Photo Agent**, a tool for extracting features, descriptions, "
-        "and metadata from photos using Ollama vision models over a local network. "
-        "I can process images to identify subjects, objects, colors, settings, moods, and tags. "
-        "I also support vector embeddings for similarity search and semantic queries."
-    )
 
 
 def _call_chat_endpoint(

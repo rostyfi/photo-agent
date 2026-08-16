@@ -60,11 +60,6 @@ class TestDatabaseSidecarStore(unittest.TestCase):
         writer = DatabaseSidecarStore()
         self.assertIsNone(writer.load(self.image_path))
 
-    def test_sidecar_path_returns_db_path(self):
-        sp = DatabaseSidecarStore.sidecar_path(self.image_path)
-        expected = FeaturesDatabase.default_db_path(Path(self.image_path).parent)
-        self.assertEqual(sp, expected)
-
 
 if __name__ == "__main__":
     unittest.main()

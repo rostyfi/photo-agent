@@ -512,22 +512,6 @@ class FeaturesDatabase:
             logger.error("Failed to delete from vec_embeddings for %s: %s", image_path, e)
             return False
 
-    def get_from_vec_table(self, conn: sqlite3.Connection, image_path: str, dimension: int) -> list[float] | None:
-        """Retrieve a vector from the vec_embeddings virtual table."""
-        try:
-            row = conn.execute(
-                "SELECT embedding FROM vec_embeddings WHERE image_path = ?",
-                (image_path,),
-            ).fetchone()
-
-            if row and row[0]:
-                blob = row[0]
-                return self.blob_to_vector(blob, dimension)
-            return None
-        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
-            logger.error("Failed to get embedding from vec_embeddings for %s: %s", image_path, e)
-            return None
-
     def vec_find_similar(
         self, conn: sqlite3.Connection, query_vector: list[float], limit: int = 10
     ) -> list[tuple[str, float]]:
@@ -724,34 +708,6 @@ class FeaturesDatabase:
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             return columns, rows
-
-    def search_features(self, query: str, limit: int = 50) -> list[dict]:
-        """Full-text search over normalised feature columns and tags."""
-        if not self.db_path.exists() or not self._fts5_available:
-            return []
-        with self.get_connection() as conn:
-            cursor = conn.execute(
-                """
-                SELECT
-                    e.image_path,
-                    e.description,
-                    e.subjects,
-                    e.objects,
-                    e.colors,
-                    e.setting,
-                    e.mood,
-                    GROUP_CONCAT(t.tag, ', ') AS tags
-                FROM extracted_features_fts f
-                JOIN extracted_features e ON e.rowid = f.rowid
-                LEFT JOIN feature_tags t ON e.image_path = t.image_path
-                WHERE extracted_features_fts MATCH ?
-                GROUP BY e.image_path
-                LIMIT ?
-                """,
-                (query, limit),
-            )
-            columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
     def get_features_by_tag(self, tag: str) -> list[dict]:
         """Return normalised features for images that have a given tag."""
@@ -1121,14 +1077,6 @@ class FeaturesDatabase:
 
         return format_metadata_for_display(metadata_obj)
 
-    def rebuild_fts_index(self) -> None:
-        """Rebuild the FTS5 index from the normalised content table."""
-        if not self.db_path.exists() or not self._fts5_available:
-            return
-        with self.get_connection() as conn:
-            conn.execute("INSERT INTO extracted_features_fts(extracted_features_fts) VALUES('rebuild')")
-            conn.commit()
-
     def save_embedding(self, image_path: str, model_name: str, vector: list[float]) -> None:
         """Save embedding to both metadata and vector index.
 
@@ -1237,45 +1185,6 @@ class FeaturesDatabase:
                 (image_path, model_name),
             ).fetchone()
             return row is not None
-
-    def get_embedding_dimension(self, model_name: str) -> int | None:
-        """Get the embedding dimension for a given model.
-
-        Args:
-            model_name: Name of the embedding model.
-
-        Returns:
-            The dimension size, or None if no embeddings exist for this model.
-        """
-        if not self.db_path.exists():
-            return None
-
-        with self.get_connection() as conn:
-            row = conn.execute(
-                "SELECT embedding_dimension FROM image_embeddings WHERE model_name = ? LIMIT 1",
-                (model_name,),
-            ).fetchone()
-            return row[0] if row else None
-
-    def delete_embedding(self, image_path: str, model_name: str) -> None:
-        """Remove embedding from both tables.
-
-        Args:
-            image_path: Path to the image.
-            model_name: Name of the embedding model.
-        """
-        if not self.db_path.exists():
-            return
-
-        with self.get_connection() as conn:
-            conn.execute(
-                "DELETE FROM image_embeddings WHERE image_path = ? AND model_name = ?",
-                (image_path, model_name),
-            )
-            # Delete from vec_embeddings table
-            self.delete_from_vec_table(conn, image_path)
-            conn.commit()
-            logger.debug("Deleted embedding for %s (model: %s)", image_path, model_name)
 
     def get_all_embeddings(self, model_name: str) -> list[tuple[str, list[float]]]:
         """Retrieve all embeddings for a specific model.
@@ -1437,11 +1346,6 @@ class DatabaseSidecarStore(AbstractSidecarStore):
             db_path = FeaturesDatabase.default_db_path(folder)
             self._dbs[folder] = FeaturesDatabase(db_path)
         return self._dbs[folder]
-
-    @classmethod
-    def sidecar_path(cls, image_path: str) -> Path:
-        """Return the expected database path for a given image."""
-        return FeaturesDatabase.default_db_path(Path(image_path).parent)
 
     def save(self, image_path: str, result: dict) -> str:
         """Persist an extraction result dict to the folder's features.db.

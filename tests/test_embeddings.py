@@ -266,7 +266,6 @@ class TestBaseEmbeddingGenerator:
 
         # Check that all methods are abstract
         assert hasattr(BaseEmbeddingGenerator, "generate")
-        assert hasattr(BaseEmbeddingGenerator, "generate_b64")
         assert hasattr(BaseEmbeddingGenerator, "dimension")
         assert hasattr(BaseEmbeddingGenerator, "model_name")
 

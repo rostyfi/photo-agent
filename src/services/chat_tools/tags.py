@@ -183,68 +183,6 @@ class TagsTool(BaseTool):
 
         return related
 
-    def _show_tag_photos_and_related(self, db: FeaturesDatabase, tag: str) -> ChatResponse:
-        """Show photos with a specific tag and related tags."""
-        # Get photos with this tag
-        photos = db.get_features_by_tag(tag)
-
-        if not photos:
-            return ChatResponse(
-                status="success",
-                response={"text": f"No photos found with tag '**{tag}**'.", "photos": [], "related_tags": []},
-                response_type="photos_and_tags",
-                sender="assistant",
-                model="N/A",
-            )
-
-        # Get related tags (tags that co-occur with this tag)
-        related_tags = db.list_tag_frequencies_restricted([tag], limit=20)
-
-        # Format photo results
-        photo_lines = []
-        photo_data = []
-        for photo in photos[:20]:  # Limit to 20 photos
-            path = photo.get("image_path", "")
-            description = photo.get("description", "No description")
-            photo_lines.append(f"  • **{path}** - {description[:100]}...")
-            photo_data.append({"path": path, "description": description})
-
-        photos_section = f"**Photos with tag '{tag}' ({len(photos)} total):**\n\n"
-        photos_section += "\n".join(photo_lines)
-
-        if len(photos) > 20:
-            photos_section += f"\n\n*... and {len(photos) - 20} more photos*"
-
-        # Format related tags
-        related_lines = []
-        related_tag_data = []
-        if related_tags:
-            for related_tag, count in related_tags:
-                related_lines.append(f"  • **{related_tag}** ({count} photos)")
-                related_tag_data.append({"name": related_tag, "count": count})
-
-            related_section = f"\n\n**Tags that often appear with '{tag}':**\n\n"
-            related_section += "\n".join(related_lines)
-        else:
-            related_section = f"\n\n**No other tags co-occur with '{tag}'.**"
-
-        text_response = photos_section + related_section
-        text_response += "\n\n**Tip:** Click on a related tag to explore photos with both tags."
-
-        return ChatResponse(
-            status="success",
-            response={
-                "text": text_response,
-                "photos": photo_data,
-                "related_tags": related_tag_data,
-                "tag": tag,
-                "total_photos": len(photos),
-            },
-            response_type="photos_and_tags",
-            sender="assistant",
-            model="N/A",
-        )
-
 
 class TagTool(BaseTool):
     """Tool for showing photos with a specific tag.

@@ -29,7 +29,7 @@ For detailed project documentation, see `README.md`.
 
 ### Plugin Development
 
-- **LLM backends:** Subclass `BasePhotoExtractor` from `src.interfaces`, implement `extract()`, `extract_b64()`, `health_check()`, register via `plugins.llm.registry.register_backend()` in `plugins/llm/backends/<name>/__init__.py`. Auto-discovered by `factory.py` via `pkgutil`.
+- **LLM backends:** Subclass `BasePhotoExtractor` from `src.interfaces`, implement `extract_b64()`, `health_check()`, register via `plugins.llm.registry.register_backend()` in `plugins/llm/backends/<name>/__init__.py`. Auto-discovered by `factory.py` via `pkgutil`.
 - **Image format plugins:** Create package under `plugins/formats/<name>/`, implement `read_*_bytes(path) -> bytes`, call `register_format()` from `plugins.formats.registry` in `__init__.py`. Auto-discovered by `read_image_bytes()`.
 - **Embedding backends:** Create package under `plugins/embeddings/backends/<name>/`, extend `BaseEmbeddingGenerator`, register in `__init__.py`. Auto-discovered by embedding registry.
 - **Chat Tools:** Create class in `src/services/chat_tools/`, extend `BaseTool`, implement `handle()`, use `@register_tool` decorator. Auto-discovered via `loader.py`.

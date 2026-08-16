@@ -18,7 +18,6 @@ from src.constants import DEFAULT_LLM_MODEL
 INPUT_STYLE = "bg-dark text-light"
 BUTTON_STYLE = "w-100"
 MB_2 = "mb-2"
-MB_3 = "mb-3"
 
 
 # =============================================================================

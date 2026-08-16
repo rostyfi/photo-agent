@@ -2,7 +2,6 @@
 
 import json
 import logging
-from pathlib import Path
 
 from src.interfaces import BasePhotoExtractor, ProcessingResult
 
@@ -37,19 +36,6 @@ class DryRunPhotoExtractor(BasePhotoExtractor):
             default_prompt=default_prompt,
         )
         logger.info("Initialized DryRun extractor (model: %s)", self.model)
-
-    def extract(
-        self,
-        image_path: str | Path,
-        prompt: str | None = None,
-        options: dict | None = None,
-    ) -> ProcessingResult:
-        """Return a synthetic ProcessingResult for the given image path."""
-        used_prompt = prompt or self.default_prompt
-        result = self._make_result(used_prompt, seed=str(image_path))
-        result.image_path = str(image_path)
-        logger.info("[DRY RUN] Pretended to process %s", image_path)
-        return result
 
     def extract_b64(
         self,

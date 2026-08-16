@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 # Import constants for default values
 from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
@@ -106,13 +105,6 @@ class BasePhotoExtractor(ABC):
         self.timeout = timeout
         self.base_url = f"http://{self.host}:{self.port}"
         self.default_prompt = default_prompt or DEFAULT_PROMPT
-
-    @abstractmethod
-    def extract(
-        self, image_path: str | Path, prompt: str | None = None, options: dict | None = None
-    ) -> ProcessingResult:
-        """Extract features from a single image file. Returns ProcessingResult."""
-        ...
 
     @abstractmethod
     def extract_b64(self, image_b64: str, prompt: str | None = None, options: dict | None = None) -> ProcessingResult:

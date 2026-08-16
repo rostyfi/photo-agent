@@ -30,18 +30,6 @@ class BaseEmbeddingGenerator(ABC):
         """
         ...
 
-    @abstractmethod
-    def generate_b64(self, image_b64: str) -> list[float] | None:
-        """Generate embedding vector from a base64-encoded image.
-
-        Args:
-            image_b64: Base64-encoded image string.
-
-        Returns:
-            List of floats representing the embedding vector, or None on failure.
-        """
-        ...
-
     def generate_from_text(self, text: str, model: str | None = None) -> list[float] | None:
         """Generate embedding vector from text.
 

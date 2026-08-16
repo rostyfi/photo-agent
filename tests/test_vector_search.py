@@ -111,41 +111,6 @@ class TestVectorDatabase:
         # Now should have embedding
         assert temp_db.has_embedding(image_path, model_name) is True
 
-    def test_get_embedding_dimension(self, temp_db):
-        """Test getting embedding dimension for a model."""
-        try:
-            temp_db.init_vector_search()
-        except RuntimeError:
-            pytest.skip("sqlite-vec not available")
-
-        image_path = "/test/image.jpg"
-        model_name = "test-model"
-        vector = [0.1, 0.2, 0.3, 0.4]  # 4 dimensions
-
-        temp_db.save_embedding(image_path, model_name, vector)
-
-        dimension = temp_db.get_embedding_dimension(model_name)
-        assert dimension == 4
-
-    def test_delete_embedding(self, temp_db):
-        """Test deleting an embedding."""
-        try:
-            temp_db.init_vector_search()
-        except RuntimeError:
-            pytest.skip("sqlite-vec not available")
-
-        image_path = "/test/image.jpg"
-        model_name = "test-model"
-        vector = [0.1, 0.2, 0.3]
-
-        # Save embedding
-        temp_db.save_embedding(image_path, model_name, vector)
-        assert temp_db.has_embedding(image_path, model_name) is True
-
-        # Delete embedding
-        temp_db.delete_embedding(image_path, model_name)
-        assert temp_db.has_embedding(image_path, model_name) is False
-
     def test_find_similar_basic(self, temp_db):
         """Test basic similarity search."""
         try:

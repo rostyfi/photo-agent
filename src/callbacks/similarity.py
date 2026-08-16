@@ -235,50 +235,6 @@ def register_similarity_search_callback(app):
             return html.Div(f"Error: {e!s}", className="text-danger")
 
 
-def register_embedding_status_callback(app):
-    """Register callback to check embedding generation status.
-
-    Returns whether embeddings are available for a given image.
-    """
-
-    @app.callback(
-        Output("embedding-status", "children", allow_duplicate=True),
-        Input("photo-list-store", "data"),
-        State("input-folder", "value"),
-        prevent_initial_call=True,
-    )
-    def check_embedding_status(store_data, folder):
-        if not folder or not store_data:
-            return ""
-
-        paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
-        current_index = store_data.get("index") if isinstance(store_data, dict) else None
-
-        if current_index is None or current_index >= len(paths):
-            return ""
-
-        current_image_path = paths[current_index]
-
-        try:
-            db = _get_db(folder)
-            if db is None:
-                return dbc.Badge("No database", color="warning")
-
-            config = _get_app_config()
-
-            has_emb = db.has_embedding(current_image_path, config.embedding_model)
-            db.close()
-
-            if has_emb:
-                return dbc.Badge("Embedding available", color="success")
-            else:
-                return dbc.Badge("No embedding", color="warning")
-
-        except Exception as e:
-            logger.error("Failed to check embedding status: %s", e)
-            return dbc.Badge("Error", color="danger")
-
-
 def register_display_similar_photos_callback(app):
     """Register callback to display similar photos in the detail modal."""
 

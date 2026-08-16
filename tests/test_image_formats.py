@@ -11,7 +11,7 @@ from plugins.formats.heic.converter import (
     validate_heic_integrity,
 )
 from plugins.formats.image import _detect_extension_by_magic, read_image_bytes
-from plugins.formats.registry import get_reader, register_format, unregister_format
+from plugins.formats.registry import _readers, get_reader, register_format
 
 
 class TestImageBytesReading(unittest.TestCase):
@@ -59,7 +59,7 @@ class TestImageBytesReading(unittest.TestCase):
             self.assertIn(tmp_path, registered)
         finally:
             os.unlink(tmp_path)
-            unregister_format((".foo",))
+            _readers.pop(".foo", None)
 
     def test_get_reader_registered(self):
         def dummy(path):
@@ -67,7 +67,7 @@ class TestImageBytesReading(unittest.TestCase):
 
         register_format((".testext",), dummy)
         self.assertIsNotNone(get_reader(".testext"))
-        unregister_format((".testext",))
+        _readers.pop(".testext", None)
 
     def test_get_reader_unregistered(self):
         self.assertIsNone(get_reader(".nonexistent"))

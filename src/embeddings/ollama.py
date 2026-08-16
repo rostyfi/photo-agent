@@ -168,17 +168,6 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             logger.error("Failed to read image file %s: %s", image_path, e)
             raise
 
-    def _encode_image_b64(self, image_b64: str) -> str:
-        """Ensure the image is properly base64 encoded (handles both raw and already encoded)."""
-        # Check if already base64 encoded
-        try:
-            # Try to decode and re-encode to ensure proper format
-            decoded = base64.b64decode(image_b64)
-            return base64.b64encode(decoded).decode("utf-8")
-        except Exception:
-            # If decoding fails, assume it's already in the right format
-            return image_b64
-
     def _generate_embedding_request(
         self, image_b64: str, model: str | None = None, prompt: str | None = None
     ) -> list[float]:
@@ -363,32 +352,6 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
             logger.error("Failed to generate embedding from text: %s", e)
             raise RuntimeError(
                 f"Failed to generate embedding from text. "
-                f"Error: {e}. "
-                f"Vector search library is a HARD REQUIREMENT for vector search."
-            ) from e
-
-    def generate_b64(self, image_b64: str) -> list[float]:
-        """Generate embedding vector from a base64-encoded image.
-
-        Args:
-            image_b64: Base64-encoded image string.
-
-        Returns:
-            List of floats representing the embedding vector.
-
-        Raises:
-            RuntimeError: If embedding generation fails.
-        """
-        try:
-            encoded = self._encode_image_b64(image_b64)
-            return self._generate_embedding_request(encoded)
-        except RuntimeError:
-            # Re-raise embedding generation errors
-            raise
-        except Exception as e:
-            logger.error("Failed to generate embedding from base64: %s", e)
-            raise RuntimeError(
-                f"Failed to generate embedding from base64 image. "
                 f"Error: {e}. "
                 f"Vector search library is a HARD REQUIREMENT for vector search."
             ) from e

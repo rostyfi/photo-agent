@@ -4,7 +4,6 @@ Ollama LLM client for photo feature extraction.
 
 import json
 import logging
-from pathlib import Path
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -12,7 +11,6 @@ from urllib3.util.retry import Retry
 
 from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
 from src.interfaces import DEFAULT_PROMPT, BasePhotoExtractor, ErrorCode, ProcessingResult
-from src.utils import encode_image_file
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +66,6 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-
-    def _encode_image(self, image_path: str | Path) -> str:
-        """Read and base64-encode an image file via the format plugin system."""
-        return encode_image_file(str(image_path))
 
     @staticmethod
     def _strip_markdown_fences(text: str) -> str:
@@ -227,21 +221,6 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                 error_code=ErrorCode.NETWORK_ERROR.value,
                 error=str(e),
             )
-
-    def extract(
-        self,
-        image_path: str | Path,
-        prompt: str | None = None,
-        options: dict | None = None,
-    ) -> ProcessingResult:
-        """Read an image file, encode to base64, then call extract_b64.
-
-        The resulting ProcessingResult will have ``image_path`` set.
-        """
-        image_b64 = self._encode_image(image_path)
-        result = self.extract_b64(image_b64, prompt=prompt, options=options)
-        result.image_path = str(image_path)
-        return result
 
     def health_check(self) -> bool:
         """Ping the Ollama /api/tags endpoint to verify server reachability."""

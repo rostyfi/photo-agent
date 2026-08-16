@@ -307,47 +307,6 @@ class TestSaveExtraction:
 
 
 class TestQueryHelpers:
-    def test_search_features_returns_matches(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "features.db"
-            db = FeaturesDatabase(db_path)
-            db.save_extraction(
-                "/photos/a.jpg",
-                {
-                    "success": True,
-                    "parsed": {"description": "sunset at the beach", "tags": ["beach"]},
-                },
-            )
-            db.save_extraction(
-                "/photos/b.jpg",
-                {
-                    "success": True,
-                    "parsed": {"description": "mountain hike", "tags": ["nature"]},
-                },
-            )
-
-            # FTS may need a tiny delay or just works immediately.
-            results = db.search_features("beach")
-            paths = {r["image_path"] for r in results}
-            assert "/photos/a.jpg" in paths
-            assert "/photos/b.jpg" not in paths
-
-    def test_search_features_includes_tags(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "features.db"
-            db = FeaturesDatabase(db_path)
-            db.save_extraction(
-                "/photos/a.jpg",
-                {
-                    "success": True,
-                    "parsed": {"description": "a photo", "tags": ["beach", "sunset"]},
-                },
-            )
-
-            results = db.search_features("sunset")
-            assert len(results) == 1
-            assert results[0]["tags"] == "beach, sunset"
-
     def test_list_all_tags(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "features.db"
@@ -718,37 +677,6 @@ class TestQueryHelpers:
             db_path = Path(tmpdir) / "features.db"
             db = FeaturesDatabase(db_path)
             assert db.get_feature_summary("/missing.jpg") is None
-
-    def test_rebuild_fts_index(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "features.db"
-            db = FeaturesDatabase(db_path)
-            db.save_extraction(
-                "/photos/a.jpg",
-                {
-                    "success": True,
-                    "parsed": {"description": "rebuild test"},
-                },
-            )
-            db.rebuild_fts_index()
-            results = db.search_features("rebuild")
-            assert len(results) == 1
-
-    def test_fallback_when_fts5_unavailable(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "features.db"
-            db = FeaturesDatabase(db_path)
-            db.init_db()
-            db._fts5_available = False
-            db.save_extraction(
-                "/photos/a.jpg",
-                {
-                    "success": True,
-                    "parsed": {"description": "fallback test"},
-                },
-            )
-            assert db.search_features("fallback") == []
-            db.rebuild_fts_index()  # should be a no-op
 
 
 class TestGetExtraction:

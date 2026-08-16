@@ -80,65 +80,6 @@ def _get_extractor(host, port, model, backend, timeout, default_prompt):
     )
 
 
-def _make_processing_config(
-    host,
-    port,
-    model,
-    backend,
-    timeout,
-    default_prompt,
-    dry_run=False,
-    app_config=None,
-    embedding_enabled=True,
-    embedding_model=None,
-    embedding_backend=None,
-):
-    """Build a ProcessingConfig from loosely-typed form/state values.
-
-    This is the canonical helper used across callback modules; import it
-    rather than redefining a local ``_make_processing_config``.
-
-    Args:
-        host: LLM server host
-        port: LLM server port
-        model: LLM model name
-        backend: LLM backend name
-        timeout: Request timeout in seconds
-        default_prompt: Default extraction prompt
-        dry_run: If True, use dry_run backend
-        app_config: Optional AppConfig to draw embedding/similarity defaults from
-        embedding_enabled: Override for the embedding toggle (default True)
-        embedding_model: Override for embedding model (falls back to app_config)
-        embedding_backend: Override for embedding backend (falls back to app_config)
-    """
-    if app_config is not None:
-        emb_model = embedding_model or app_config.embedding_model
-        emb_backend = embedding_backend or app_config.embedding_backend
-        similarity_limit = app_config.similarity_limit
-        similarity_metric = app_config.similarity_metric
-    else:
-        emb_model = embedding_model or "nomic-embed-text"
-        emb_backend = embedding_backend or "ollama"
-        similarity_limit = 10
-        similarity_metric = "cosine"
-
-    from src.config import ProcessingConfig
-
-    return ProcessingConfig(
-        backend="dry_run" if dry_run else (backend or "ollama"),
-        host=host or DEFAULT_LLM_HOST,
-        port=int(port) if port else DEFAULT_LLM_PORT,
-        model=model,
-        timeout=int(timeout) if timeout else DEFAULT_LLM_TIMEOUT,
-        default_prompt=default_prompt,
-        embedding_enabled=bool(embedding_enabled) if embedding_enabled is not None else True,
-        embedding_model=emb_model,
-        embedding_backend=emb_backend,
-        similarity_limit=similarity_limit,
-        similarity_metric=similarity_metric,
-    )
-
-
 def _open_modal(image_path, folder, index, paths):
     """Open the detail modal for an image."""
     metadata = None

@@ -74,10 +74,7 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         payload = self.extractor._build_payload("base64data", "test prompt", options={"temperature": 0.5})
         self.assertEqual(payload["options"], {"temperature": 0.5})
 
-    @patch("plugins.llm.ollama.encode_image_file")
-    def test_extract_successful(self, mock_encode):
-        mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
-
+    def test_extract_successful(self):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {
@@ -88,7 +85,7 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         }
 
         with patch.object(self.extractor._session, "post", return_value=mock_response):
-            result = self.extractor.extract("/fake/path.jpg")
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
 
         self.assertTrue(result.success)
         self.assertEqual(result.model, "test-model")
@@ -96,12 +93,8 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         self.assertEqual(result.parsed, {"description": "test"})
         self.assertEqual(result.total_duration_ms, 1500.0)
         self.assertEqual(result.eval_count, 42)
-        self.assertEqual(result.image_path, "/fake/path.jpg")
 
-    @patch("plugins.llm.ollama.encode_image_file")
-    def test_extract_invalid_json_response(self, mock_encode):
-        mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
-
+    def test_extract_invalid_json_response(self):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {
@@ -112,36 +105,30 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         }
 
         with patch.object(self.extractor._session, "post", return_value=mock_response):
-            result = self.extractor.extract("/fake/path.jpg")
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
 
         self.assertTrue(result.success)
         self.assertIsNone(result.parsed)
 
-    @patch("plugins.llm.ollama.encode_image_file")
-    def test_extract_timeout(self, mock_encode):
-        mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
-
+    def test_extract_timeout(self):
         with patch.object(
             self.extractor._session,
             "post",
             side_effect=requests.exceptions.Timeout("timed out"),
         ):
-            result = self.extractor.extract("/fake/path.jpg")
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
 
         self.assertFalse(result.success)
         self.assertEqual(result.error_code, ErrorCode.TIMEOUT.value)
         self.assertIn("timed out", result.error)
 
-    @patch("plugins.llm.ollama.encode_image_file")
-    def test_extract_network_error(self, mock_encode):
-        mock_encode.return_value = "ZmFrZS1pbWFnZS1kYXRh"
-
+    def test_extract_network_error(self):
         with patch.object(
             self.extractor._session,
             "post",
             side_effect=requests.exceptions.ConnectionError("refused"),
         ):
-            result = self.extractor.extract("/fake/path.jpg")
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
 
         self.assertFalse(result.success)
         self.assertEqual(result.error_code, ErrorCode.NETWORK_ERROR.value)
