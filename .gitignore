@@ -50,3 +50,4 @@ cache/
 # Coding agents
 .pi
 .docker-pi
+.vibe

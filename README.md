@@ -136,6 +136,9 @@ Then point the agent at `/photos` (via `LOCAL_PHOTO_AGENT_FOLDER` or a chat `/sc
 The `main.py` script accepts individual files **or folders**.
 
 ```bash
+# Show the installed version
+python main.py --version
+
 # Process a single image
 python main.py photo.jpg
 

@@ -2,6 +2,7 @@
 
 from src.services.chat_response import ChatResponse
 from src.services.chat_tools.base import BaseTool, ToolMetadata
+from src.version import __version__
 
 
 class AboutTool(BaseTool):
@@ -29,8 +30,8 @@ class AboutTool(BaseTool):
         return ChatResponse(
             status="success",
             response=(
-                "I am the **Local Photo Agent**, a chat assistant for a photo feature extraction system. "
-                "I have access to specific tools for querying photo databases. "
+                f"I am the **Local Photo Agent** (v{__version__}), a chat assistant for a photo feature "
+                "extraction system. I have access to specific tools for querying photo databases. "
                 "Use `/tools` to see available commands."
             ),
             sender="assistant",

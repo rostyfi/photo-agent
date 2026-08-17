@@ -18,6 +18,7 @@ from src.layout_components import (
     build_settings_modal,
     build_sql_explorer_modal,
 )
+from src.version import __version__
 
 # Captured once at process start so the footer shows when the running
 # container booted. Lets users confirm their browser is on the latest build.
@@ -118,7 +119,7 @@ def create_layout(app_config: AppConfig):
             html.Footer(
                 html.P(
                     [
-                        f"Local Photo Agent · {datetime.now().year} · build {_BUILD_STAMP}",
+                        f"Local Photo Agent v{__version__} · {datetime.now().year} · build {_BUILD_STAMP}",
                     ],
                     className="text-center text-muted mb-0",
                 )
