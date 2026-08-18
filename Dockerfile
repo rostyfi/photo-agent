@@ -44,7 +44,10 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Configurable application port (override with: --build-arg DASH_PORT=<port>)
+ARG DASH_PORT=8050
 ENV LOCAL_PHOTO_AGENT_DASH_HOST=0.0.0.0
+ENV LOCAL_PHOTO_AGENT_DASH_PORT=${DASH_PORT}
 
 WORKDIR /app
 
@@ -76,6 +79,6 @@ RUN chmod +x /entrypoint.sh
 
 COPY . .
 
-EXPOSE 8050
+EXPOSE ${DASH_PORT}
 
 CMD ["/entrypoint.sh"]

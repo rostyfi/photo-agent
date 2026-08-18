@@ -9,24 +9,36 @@
 #   ./setup-arm.sh /path/to/photos     # Mount a host folder into /photos in the container
 #   ./setup-arm.sh --no-cache          # Build without using Docker cache
 #   ./setup-arm.sh --no-cache /path/to/photos  # Build without cache and mount folder
+#   ./setup-arm.sh --port 9000         # Run the app on a custom host port
 
 set -e
 
 # Parse arguments
 USE_CACHE=true
 FOLDER_PATH=""
+DASH_PORT=""
 
 # Process all arguments
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --no-cache)
             USE_CACHE=false
+            shift
+            ;;
+        --port)
+            if [[ -z "$2" ]]; then
+                echo "Error: --port requires a value."
+                exit 1
+            fi
+            DASH_PORT="$2"
+            shift 2
             ;;
         *)
             # Assume it's a folder path if it's not a flag we recognize
-            if [[ "$arg" != -* ]]; then
-                FOLDER_PATH="$arg"
+            if [[ "$1" != -* ]]; then
+                FOLDER_PATH="$1"
             fi
+            shift
             ;;
     esac
 done
@@ -105,6 +117,9 @@ echo ""
 # Build and run
 export USER_UID=$(id -u)
 export USER_GID=$(id -g)
+if [ -n "$DASH_PORT" ]; then
+    export LOCAL_PHOTO_AGENT_DASH_PORT="$DASH_PORT"
+fi
 echo "Building container and starting app (UID=$USER_UID, GID=$USER_GID)..."
 echo "Using pre-built ARM64 wheels for sqlite-vec..."
 echo ""
@@ -127,7 +142,7 @@ echo "Done! The app is running."
 echo "================================================"
 echo ""
 echo "Open in your browser:"
-echo "   http://localhost:8050"
+echo "   http://localhost:${DASH_PORT:-8050}"
 echo ""
 if [ -n "$FOLDER_PATH" ]; then
     echo "Mounted folder inside container:"

@@ -6,9 +6,9 @@ services:
     container_name: local-photo-agent
     # Run as host user so bind-mounted folders are writable
     user: "${USER_UID:-1000}:${USER_GID:-1000}"
-    # Map host port 8050 to container port 8050
+    # Map host port to container port (configurable via LOCAL_PHOTO_AGENT_DASH_PORT)
     ports:
-      - "8050:8050"
+      - "${LOCAL_PHOTO_AGENT_DASH_PORT:-8050}:${LOCAL_PHOTO_AGENT_DASH_PORT:-8050}"
     # Pass through LLM and Dash config as environment variables
     environment:
       - LOCAL_PHOTO_AGENT_LLM_HOST=${LOCAL_PHOTO_AGENT_LLM_HOST:-${LOCAL_PHOTO_AGENT_OLLAMA_HOST:-127.0.0.1}}
@@ -19,9 +19,9 @@ services:
       - LOCAL_PHOTO_AGENT_DASH_DEBUG=${LOCAL_PHOTO_AGENT_DASH_DEBUG:-false}
     # Restart policy
     restart: unless-stopped
-    # Health check
+    # Health check (uses the configured container port)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/"]
+      test: ["CMD-SHELL", "curl -f http://localhost:${LOCAL_PHOTO_AGENT_DASH_PORT:-8050}/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
