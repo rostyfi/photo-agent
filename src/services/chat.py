@@ -99,7 +99,9 @@ class ChatService:
             metadata = tool.metadata
             # For /find, /tags, and /tag, include the usage pattern
             if command == "/find":
-                lines.append(f"{command} <number> <description> - {metadata.description} / {metadata.usage}")
+                lines.append(
+                    f"{command} <number> <description> [@<date>] - {metadata.description} / {metadata.usage}"
+                )
             elif command == "/tags":
                 lines.append(f"{command} [topic] - {metadata.description} / {metadata.usage}")
             elif command == "/tag":
@@ -124,6 +126,12 @@ class ChatService:
         examples.append("  User: 'can you find 3 photos of beaches' -> YOU: '/find 3 beaches'")
         examples.append("  User: 'show me photos of animals' -> YOU: '/find animals'")
         examples.append("  User: 'show me photos of birds' -> YOU: '/find birds'")
+        # /find with a date filter (append @<date> when the user mentions a time)
+        examples.append("  User: 'find photos of a car from last summer' -> YOU: '/find car @last summer'")
+        examples.append("  User: 'show me 5 photos of dogs from summer 2024' -> YOU: '/find 5 dogs @summer 2024'")
+        examples.append("  User: 'find photos of snow from January 2024' -> YOU: '/find snow @january 2024'")
+        examples.append("  User: 'show me beach photos from 2023' -> YOU: '/find beach @2023'")
+        examples.append("  User: 'find photos of flowers from last month' -> YOU: '/find flowers @last month'")
 
         # Examples for /tags tool
         examples.append("  User: 'show me tags related to sport' -> YOU: '/tags sport'")
@@ -179,6 +187,7 @@ class ChatService:
             "\n"
             "ROUTING RULES (choose the correct tool):\n"
             "- /find: search photos by a DESCRIPTION or SUBJECT the user describes (e.g., 'photos of animals', 'photos of birds', 'dogs running'). Use /find for any 'show me photos of X' where X is a subject/description, NOT an exact tag name.\n"
+            "  When the user mentions WHEN the photo was taken (e.g., 'last summer', 'summer 2024', 'January 2024', '2023', 'last month', 'last winter with a baby'), separate the visual description from the time words. Preferred form: '/find <description> @<date>' e.g. '/find car @last summer' or '/find 5 baby @last winter'. If you cannot cleanly separate them, output '/find <description and date words as written>' and the find tool will split them itself. Never drop the description or the date.\n"
             "- /tag: ONLY filter photos by an EXACT tag name the user already knows exists (e.g., 'photos with the nature tag'). Never use /tag for general subject searches — use /find instead.\n"
             "- /tags: list or discover available tag names by topic.\n"
             "- If unsure whether the user means a subject search or an exact tag, prefer /find.\n"

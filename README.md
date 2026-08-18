@@ -218,6 +218,19 @@ Open [http://localhost:8050](http://localhost:8050) after starting the app.
    - `/scan` — list processable images in the current folder
    - `/process` — process pending images in the current folder
    - `/find <query>` — full-text search over descriptions, subjects, and tags
+     - Append `@<date>` to restrict results by when the photo was taken, e.g.
+       `/find car @last summer`, `/find 5 dogs @summer 2024`,
+       `/find snow @january 2024`, or `/find beach @2023`. Recognised date
+       expressions include relative terms (`last summer`, `this month`,
+       `last week`, `yesterday`), seasons with a year (`summer 2024`,
+       `winter 2024`), month/year (`january 2024`), and bare years (`2023`).
+       Open-ended expressions (e.g. `around Christmas a few years ago`) are
+       resolved by the LLM, which classifies each expression and routes
+       standard forms to a deterministic parser and fuzzy forms to itself.
+       You don't have to use `@` — the find tool asks the LLM to split the
+       visual description from the time reference, so `find me photos from
+       last winter with a baby on them` works directly (the LLM separates
+       "baby" from "last winter" before searching).
    - `/count` — count processed/unprocessed images
    - `/status` — show batch processing status
    - `/tags` — list extracted tags

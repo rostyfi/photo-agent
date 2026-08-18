@@ -1221,6 +1221,59 @@ class FeaturesDatabase:
 
             return results
 
+    def get_embeddings_date_filtered(
+        self, model_name: str | None, date_start: str, date_end: str
+    ) -> list[tuple[str, list[float]]]:
+        """Retrieve embeddings restricted to images taken within a date range.
+
+        Joins ``image_embeddings`` with ``image_metadata`` and filters on the
+        first available of ``date_taken``, ``date_created`` or
+        ``date_modified``. EXIF dates are commonly stored as
+        ``"YYYY:MM:DD HH:MM:SS"``; colons in the date portion are replaced
+        with dashes so a lexicographic ``BETWEEN`` against ``YYYY-MM-DD``
+        bounds works correctly. Images with no metadata row or no usable
+        date are excluded.
+
+        Args:
+            model_name: Embedding model name to filter by.
+            date_start: Inclusive start date (``YYYY-MM-DD``).
+            date_end: Inclusive end date (``YYYY-MM-DD``).
+
+        Returns:
+            List of (image_path, vector) tuples.
+        """
+        if not self.db_path.exists():
+            return []
+        if not model_name:
+            return []
+
+        with self.get_connection() as conn:
+            # Normalise EXIF-style "YYYY:MM:DD ..." to "YYYY-MM-DD ..." and
+            # compare only the date prefix so the time component is ignored.
+            rows = conn.execute(
+                """
+                SELECT ie.image_path, ie.embedding_dimension, ie.embedding_blob
+                FROM image_embeddings ie
+                JOIN image_metadata im ON im.image_path = ie.image_path
+                WHERE ie.model_name = ?
+                  AND substr(replace(
+                      COALESCE(im.date_taken, im.date_created, im.date_modified),
+                      ':', '-'), 1, 10) BETWEEN ? AND ?
+                """,
+                (model_name, date_start, date_end),
+            ).fetchall()
+
+            results = []
+            for image_path, dimension, blob in rows:
+                if blob:
+                    try:
+                        vector = self.blob_to_vector(blob, dimension)
+                        results.append((image_path, vector))
+                    except (ValueError, struct.error) as e:
+                        logger.warning("Failed to decode embedding for %s: %s", image_path, e)
+                        continue
+            return results
+
     def find_similar(self, query_vector: list[float], limit: int = 10) -> list[tuple[str, float]]:
         """Find images similar to the query vector using cosine similarity.
 
@@ -1262,7 +1315,12 @@ class FeaturesDatabase:
             return self.vec_find_similar(conn, query_vector, limit=limit)
 
     def find_similar_rest(
-        self, query_vector: list[float], model_name: str | None = None, limit: int = 10
+        self,
+        query_vector: list[float],
+        model_name: str | None = None,
+        limit: int = 10,
+        date_start: str | None = None,
+        date_end: str | None = None,
     ) -> list[tuple[str, float]]:
         """Find images similar to the query vector using Python cosine similarity.
 
@@ -1274,6 +1332,11 @@ class FeaturesDatabase:
             query_vector: The query embedding vector to search for.
             model_name: Optional filter by embedding model name.
             limit: Maximum number of results to return (default: 10).
+            date_start: Optional inclusive start date (``YYYY-MM-DD``). When
+                provided together with ``date_end``, results are restricted to
+                images whose ``date_taken`` (falling back to ``date_created``
+                then ``date_modified``) falls within the range.
+            date_end: Optional inclusive end date (``YYYY-MM-DD``).
 
         Returns:
             List of (image_path, similarity_score) tuples, sorted by score DESC.
@@ -1289,8 +1352,11 @@ class FeaturesDatabase:
         if not self.db_path.exists():
             return []
 
-        # Get all embeddings from database
-        embeddings = self.get_all_embeddings(model_name) if model_name else []
+        # Get all embeddings from database, optionally narrowed by a date range.
+        if date_start and date_end:
+            embeddings = self.get_embeddings_date_filtered(model_name, date_start, date_end)
+        else:
+            embeddings = self.get_all_embeddings(model_name) if model_name else []
 
         if not embeddings:
             logger.warning("No embeddings found in database")
