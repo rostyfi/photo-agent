@@ -202,13 +202,14 @@ python main.py ./photos --embeddings-only
 python main.py ./photos/photo1.jpg --find-similar --similar-limit 5
 
 # List available embedding models from Ollama
-python main.py --list-embedding-models
+# (a path argument is required; "." is a harmless placeholder)
+python main.py . --list-embedding-models
 
 # Generate embeddings for existing photos (without reprocessing)
 python main.py ./photos --embeddings-only
 ```
 
-Supported image extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.tiff`, `.tif`
+Supported image extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.heic`, `.heif`
 
 ### SQLite Database Storage
 
@@ -259,6 +260,7 @@ Open [http://localhost:8050](http://localhost:8050) after starting the app.
    - `/count` — count processed/unprocessed images
    - `/status` — show batch processing status
    - `/tags` — list extracted tags
+   - `/tag <name>` — show photos with a specific tag
    - `/about`, `/tools` — agent info and available tools
 
    **Live progress bar:** When you run `/process` or `/status`, a real-time progress bar appears above the chat input. It polls the batch state every ~1.5s, shows processed/total and a percentage, and hides itself a few seconds after the batch completes or is aborted.
@@ -286,6 +288,7 @@ The web application (`app.py`) provides several REST API endpoints for programma
 |--------|----------|-------------|
 | GET | `/preview?path=<path>&size=<size>` | Get a resized image thumbnail (supports HEIC/HEIF conversion) |
 | POST | `/_api/chat` | Send a chat message to Ollama and get a response |
+| POST | `/_api/chat/stream` | Stream a chat response from Ollama as Server-Sent Events |
 | GET | `/_api/process_status?folder=<folder>` | Live batch processing progress (status, total, completed) for the chat progress bar |
 | POST | `/_api/find_similar` | Find similar images using vector embeddings |
 | GET | `/_api/test_rest_vector_search` | Test REST-based vector search functionality |
@@ -383,6 +386,7 @@ pip install -r requirements.txt
 
 ```python
 from plugins.llm import create_extractor
+from src.utils import encode_image_file
 
 extractor = create_extractor(
     host="127.0.0.1",
@@ -390,7 +394,9 @@ extractor = create_extractor(
     model="gemma4:e2b-it-qat",
 )
 
-result = extractor.extract("photo.jpg")
+# Read the image and extract features via base64.
+b64 = encode_image_file("photo.jpg")
+result = extractor.extract_b64(b64)
 print(result.as_dict())
 ```
 
