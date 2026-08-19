@@ -6,7 +6,12 @@ from dash import html
 
 import src.callbacks.health_settings as _hs
 from plugins.llm import create_extractor
-from src.callbacks.health_settings import register_health_callback, register_settings_modal_callback
+from src.callbacks.health_settings import (
+    register_concurrency_setting_callback,
+    register_health_callback,
+    register_settings_modal_callback,
+)
+from src.config import AppConfig
 from tests.test_callbacks import find_callback, patch_callback_context
 
 
@@ -91,6 +96,60 @@ class TestSettingsModalCallback(unittest.TestCase):
         with patch_callback_context(_hs, []):
             result = cb(None, None)
         self.assertEqual(result, dash.no_update)
+
+
+class TestConcurrencySettingCallback(unittest.TestCase):
+    def setUp(self):
+        self.app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+        self.app.layout = html.Div([html.Div(id="input-concurrency")])
+        self.app_config = AppConfig()
+        self.app_config.batch_concurrency = 1
+        register_concurrency_setting_callback(self.app, self.app_config)
+
+    def _cb(self):
+        return find_callback(self.app, "input-concurrency", "valid").__wrapped__
+
+    def test_updates_app_config_value(self):
+        self._cb()(4, None)
+        self.assertEqual(self.app_config.batch_concurrency, 4)
+
+    def test_coerces_below_one_to_one(self):
+        self._cb()(0, None)
+        self.assertEqual(self.app_config.batch_concurrency, 1)
+        self._cb()(-3, None)
+        self.assertEqual(self.app_config.batch_concurrency, 1)
+
+    def test_coerces_invalid_to_one(self):
+        self._cb()("not-a-number", None)
+        self.assertEqual(self.app_config.batch_concurrency, 1)
+
+    def test_coerces_none_to_one(self):
+        self._cb()(None, None)
+        self.assertEqual(self.app_config.batch_concurrency, 1)
+
+    def test_returns_valid_true(self):
+        self.assertTrue(self._cb()(2, None))
+
+    def test_writes_to_folder_settings_file(self, tmp_path=None):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._cb()(5, tmpdir)
+            settings_file = Path(tmpdir) / ".local-photo-agent" / "settings.json"
+            self.assertTrue(settings_file.exists())
+            import json
+
+            data = json.loads(settings_file.read_text())
+            self.assertEqual(data["batch_concurrency"], 5)
+
+    def test_empty_folder_skips_write(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._cb()(3, None)
+            self.assertFalse((Path(tmpdir) / ".local-photo-agent").exists())
 
 
 if __name__ == "__main__":

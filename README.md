@@ -160,6 +160,11 @@ python main.py ./photos --resume
 # Force reprocess all images, ignoring previous progress
 python main.py ./photos --no-resume
 
+# Process images in parallel (batch) against Ollama
+# Requires Ollama to be configured for concurrent requests
+# (e.g. OLLAMA_NUM_PARALLEL=4). Default is 1 (sequential).
+python main.py ./photos --concurrency 4
+
 # Vector embedding options
 # Generate embeddings (enabled by default)
 python main.py ./photos
@@ -424,6 +429,8 @@ When a HEIC image is processed or previewed in the web UI, it is automatically c
 - When processing large folders, consider potential memory usage from base64 encoding many images at once.
 - The application now uses a **simplified processing tracker** (`SimpleProcessingTracker`) that stores tracking information directly in the SQLite database instead of using WAL files.
 - **Automatic resume**: By default, the CLI will skip already-processed images on consecutive runs (use `--no-resume` to force reprocessing).
+- **Parallel batch processing**: Set `--concurrency N` (CLI) or `LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY=N` (env) to process up to `N` images in parallel against the LLM backend. The default `1` preserves the historical sequential behaviour. Database writes are serialized internally, so only the LLM/embedding network calls run concurrently. This requires the backend to accept concurrent requests — for Ollama, set `OLLAMA_NUM_PARALLEL` (and ensure enough model slots/contexts) or requests will simply queue server-side with no speedup. In the web UI, adjust **Settings → Connection → Batch concurrency** to change the value used by `/process` without restarting the app.
+- **Per-folder settings**: The batch concurrency value is persisted per folder in `<folder>/.local-photo-agent/settings.json` and read at processing start, so each folder can have its own parallelism. When you change **Settings → Connection → Batch concurrency** in the web UI, it is written to the active folder's settings file. On processing start (CLI or `/process`), the per-folder file overrides the env/CLI default when present; otherwise the env/CLI default applies.
 
 ## Key Design Principles
 

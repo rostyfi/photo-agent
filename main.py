@@ -70,6 +70,13 @@ def main():
     )
     parser.add_argument("--resume", action="store_true", default=True, help="Skip already-processed images (default)")
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Force reprocess all images")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=config.batch_concurrency,
+        help="Number of images to process in parallel against the LLM backend (default: %(default)s). "
+        "Requires the backend (e.g. Ollama) to be configured for concurrent requests.",
+    )
 
     # Embedding options
     parser.add_argument("--no-embeddings", action="store_true", help="Disable embedding generation")
@@ -293,12 +300,17 @@ def main():
     failures = 0
 
     for folder, folder_paths in folder_groups.items():
+        # Per-folder settings file overrides the CLI/env default when present.
+        from src.folder_settings import get_batch_concurrency
+
+        folder_concurrency = get_batch_concurrency(folder, args.concurrency)
         result = process_paths(
             folder_paths,
             extractor,
             prompt=prompt,
             resume=False,  # We already filtered by resume above
             folder=folder,  # Pass folder for embedding generation
+            concurrency=folder_concurrency,
         )
         all_results.extend(result["results"])
         processed += result["processed"]

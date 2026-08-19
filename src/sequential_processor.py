@@ -13,6 +13,8 @@ The simple approach:
 """
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +71,12 @@ class SequentialProcessor:
         self.folder = folder
         self._embedding_generator = None
         self._db = None
+        # Serializes all writes to the shared SQLite database (features.db) from
+        # concurrent worker threads. Both FeaturesDatabase and the per-folder
+        # SimpleProcessingTracker write to the same file, so a single lock guards
+        # every mutation. Network I/O (LLM extraction + embedding generation) is
+        # performed outside this lock so it stays fully parallel.
+        self._db_lock = threading.Lock()
 
         # Initialize database if folder is provided (needed for metadata and embeddings)
         if folder is not None:
@@ -94,6 +102,10 @@ class SequentialProcessor:
     def _extract_and_save_metadata(self, image_path: str) -> None:
         """Extract metadata from an image file and save it to the database.
 
+        The metadata is read from the file (local I/O) without holding the DB
+        lock; only the database write is serialized so concurrent workers can
+        parse metadata in parallel.
+
         Args:
             image_path: Path to the image file.
         """
@@ -104,12 +116,13 @@ class SequentialProcessor:
         try:
             from src.metadata import extract_metadata_dict
 
-            # Extract metadata from the image
+            # Extract metadata from the image (local I/O, no lock needed)
             metadata = extract_metadata_dict(image_path)
 
             if metadata:
-                # Save metadata to database
-                self._db.save_metadata(image_path, metadata)
+                # Save metadata to database (serialized)
+                with self._db_lock:
+                    self._db.save_metadata(image_path, metadata)
                 logger.info("Metadata extracted and saved for %s (keys: %s)", image_path, list(metadata.keys()))
             else:
                 logger.warning("No metadata found for %s", image_path)
@@ -221,14 +234,20 @@ class SequentialProcessor:
         prompt: str | None = None,
         resume: bool = True,
         progress_callback=None,
+        concurrency: int | None = None,
     ) -> dict[str, Any]:
         """
-        Process a list of image paths sequentially.
+        Process a list of image paths.
 
         Args:
             paths: List of image file paths to process.
             prompt: Optional prompt override.
             resume: If True, skip already-processed images.
+            progress_callback: Optional callable(processed, total) for progress.
+            concurrency: Number of images to process in parallel against the LLM
+                backend. ``None`` or ``1`` preserves the historical strictly
+                sequential behaviour. Values >1 dispatch per-image LLM requests
+                to a thread pool; database writes are serialized internally.
 
         Returns:
             Dictionary with processing statistics:
@@ -241,6 +260,11 @@ class SequentialProcessor:
         """
         total_found = len(paths)
         logger.info("Processing %d image paths", total_found)
+
+        # Resolve effective concurrency: None/<=1 means sequential.
+        effective_concurrency = concurrency if concurrency and concurrency > 1 else 1
+        if effective_concurrency > 1:
+            logger.info("Batch concurrency: %d", effective_concurrency)
 
         # Group paths by folder for tracking
         from collections import defaultdict
@@ -266,7 +290,48 @@ class SequentialProcessor:
             else:
                 paths_to_process = folder_paths
 
-            # Process each path
+            if effective_concurrency > 1 and len(paths_to_process) > 1:
+                # Concurrent batch processing: per-image LLM requests run in a
+                # thread pool; DB writes are serialized via self._db_lock inside
+                # process_image / _process_and_track.
+                completed = 0
+                total_in_folder = len(paths_to_process)
+                with ThreadPoolExecutor(max_workers=effective_concurrency) as pool:
+                    futures = {
+                        pool.submit(self._process_and_track, p, prompt, tracker): p
+                        for p in paths_to_process
+                    }
+                    for fut in as_completed(futures):
+                        image_path = futures[fut]
+                        try:
+                            result_dict, ok = fut.result()
+                        except Exception as e:  # pragma: no cover - defensive
+                            logger.error("Worker raised for %s: %s", image_path, e)
+                            error_result = ProcessingResult(
+                                success=False,
+                                image_path=image_path,
+                                error=str(e),
+                                error_code="PROCESSING_ERROR",
+                            )
+                            self._save_result(error_result)
+                            with self._db_lock:
+                                tracker.mark_failed(image_path, "PROCESSING_ERROR", str(e))
+                            result_dict = error_result.as_dict()
+                            ok = False
+                        all_results.append(result_dict)
+                        if ok:
+                            successes += 1
+                        else:
+                            failures += 1
+                        completed += 1
+                        if progress_callback:
+                            try:
+                                progress_callback(completed, total_in_folder)
+                            except Exception as e:
+                                logger.debug("Progress callback failed: %s", e, exc_info=True)
+                continue
+
+            # Process each path (sequential)
             for i, image_path in enumerate(paths_to_process):
                 logger.info("Processing: %s", image_path)
 
@@ -317,6 +382,40 @@ class SequentialProcessor:
             "results": all_results,
         }
 
+    def _process_and_track(
+        self,
+        image_path: str,
+        prompt: str | None,
+        tracker: SimpleProcessingTracker,
+    ) -> tuple[dict, bool]:
+        """Process a single image and update the tracker.
+
+        Used by the concurrent batch path. The LLM extraction and embedding
+        generation (network I/O) run unguarded; all database mutations are
+        serialized via ``self._db_lock``.
+
+        Returns:
+            Tuple of (result_dict, success_flag).
+        """
+        logger.info("Processing: %s", image_path)
+        try:
+            result = self.process_image(image_path, prompt=prompt)
+            with self._db_lock:
+                tracker.mark_completed(image_path)
+            return result.as_dict(), True
+        except Exception as e:
+            logger.error("Failed to process %s: %s", image_path, e)
+            error_result = ProcessingResult(
+                success=False,
+                image_path=image_path,
+                error=str(e),
+                error_code="PROCESSING_ERROR",
+            )
+            self._save_result(error_result)
+            with self._db_lock:
+                tracker.mark_failed(image_path, "PROCESSING_ERROR", str(e))
+            return error_result.as_dict(), False
+
     def _generate_and_save_embedding(self, image_path: str, description: str, model_name: str) -> tuple:
         """Generate an embedding from text and save it to the database.
 
@@ -360,7 +459,8 @@ class SequentialProcessor:
 
         # Save the embedding to the database
         try:
-            self._db.save_embedding(image_path, model_name, embedding)
+            with self._db_lock:
+                self._db.save_embedding(image_path, model_name, embedding)
             logger.info(LOG_EMBEDDING_SAVED(image_path, model_name, len(embedding)))
             return embedding, None
         except Exception as e:
@@ -372,12 +472,13 @@ class SequentialProcessor:
         """Save a processing result to database."""
         if result.image_path:
             data = result.as_dict()
-            if self._db is not None:
-                # Use the folder's database for consistency with metadata
-                self._db.save_extraction(result.image_path, data)
-            else:
-                # Fallback to sidecar store for single image processing
-                self._writer.save(result.image_path, data)
+            with self._db_lock:
+                if self._db is not None:
+                    # Use the folder's database for consistency with metadata
+                    self._db.save_extraction(result.image_path, data)
+                else:
+                    # Fallback to sidecar store for single image processing
+                    self._writer.save(result.image_path, data)
 
 
 def _parent_dir(p: str) -> str:
@@ -419,9 +520,10 @@ def process_paths(
     prompt: str | None = None,
     resume: bool = True,
     folder: str | None = None,
+    concurrency: int | None = None,
 ) -> dict[str, Any]:
     """
-    Process a list of image paths sequentially.
+    Process a list of image paths.
 
     This is a standalone function for processing multiple images.
 
@@ -431,9 +533,10 @@ def process_paths(
         prompt: Optional prompt override.
         resume: If True, skip already-processed images.
         folder: Optional folder path for database operations (required for embedding generation).
+        concurrency: Optional number of images to process in parallel (default: sequential).
 
     Returns:
         Dictionary with processing statistics.
     """
     processor = SequentialProcessor(extractor, folder=folder)
-    return processor.process_paths(paths, prompt=prompt, resume=resume)
+    return processor.process_paths(paths, prompt=prompt, resume=resume, concurrency=concurrency)

@@ -53,6 +53,12 @@ DEFAULT_LLM_PORT = 11434
 DEFAULT_LLM_TIMEOUT = 120
 DEFAULT_LLM_MODEL = "gemma4:e2b-it-qat"
 
+# Default number of images to process in parallel against the LLM backend.
+# 1 preserves the historical strictly-sequential behaviour. Values >1 require
+# the backend (e.g. Ollama) to be configured for concurrent requests
+# (OLLAMA_NUM_PARALLEL / multi-slot); otherwise requests will queue server-side.
+DEFAULT_BATCH_CONCURRENCY = 1
+
 # =============================================================================
 # LOGGING CONSTANTS
 # =============================================================================

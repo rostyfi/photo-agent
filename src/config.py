@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
+from src.constants import DEFAULT_BATCH_CONCURRENCY, DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
 from src.interfaces import DEFAULT_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,13 @@ def _validate_host(host_var: str, host: str, label: str):
 def _validate_positive(timeout_var: str, timeout: int, label: str):
     if timeout <= 0:
         raise ValueError(f"{label} must be positive, got {timeout} (env var: {timeout_var})")
+
+
+def _validate_concurrency(conc_var: str, concurrency: int):
+    if concurrency < 1:
+        raise ValueError(
+            f"Batch concurrency must be >= 1, got {concurrency} (env var: {conc_var})"
+        )
 
 
 @dataclass
@@ -129,6 +136,9 @@ class ProcessingConfig(EmbeddingConfig):
     model: str = DEFAULT_LLM_MODEL
     timeout: int = 600
     default_prompt: str = DEFAULT_PROMPT
+    # Number of images to process in parallel against the LLM backend.
+    # 1 = strictly sequential (historical behaviour).
+    batch_concurrency: int = DEFAULT_BATCH_CONCURRENCY
 
     @classmethod
     def from_env(cls) -> "ProcessingConfig":
@@ -156,6 +166,7 @@ class ProcessingConfig(EmbeddingConfig):
             or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
             default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
+            batch_concurrency=_safe_int("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", DEFAULT_BATCH_CONCURRENCY),
             embedding_enabled=emb.embedding_enabled,
             embedding_model=emb.embedding_model,
             embedding_backend=emb.embedding_backend,
@@ -171,6 +182,7 @@ class ProcessingConfig(EmbeddingConfig):
         _validate_host("LOCAL_PHOTO_AGENT_LLM_HOST", self.host, "LLM host")
         _validate_port_range("LOCAL_PHOTO_AGENT_LLM_PORT", self.port, "LLM port")
         _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
+        _validate_concurrency("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", self.batch_concurrency)
         super().validate()
 
 
@@ -197,6 +209,9 @@ class AppConfig(EmbeddingConfig):
     dash_debug: bool = False
     timeout: int = 600
     default_prompt: str = DEFAULT_PROMPT
+    # Number of images to process in parallel against the LLM backend.
+    # 1 = strictly sequential (historical behaviour).
+    batch_concurrency: int = DEFAULT_BATCH_CONCURRENCY
     folder_path: str = "/photos"
     recursive: bool = True
     dry_run: bool = False
@@ -240,6 +255,7 @@ class AppConfig(EmbeddingConfig):
             dash_debug=os.getenv("LOCAL_PHOTO_AGENT_DASH_DEBUG", "false").lower() in ("1", "true", "yes"),
             timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
             default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
+            batch_concurrency=_safe_int("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", DEFAULT_BATCH_CONCURRENCY),
             folder_path=os.getenv("LOCAL_PHOTO_AGENT_FOLDER", "/photos"),
             recursive=os.getenv("LOCAL_PHOTO_AGENT_RECURSIVE", "true").lower() in ("1", "true", "yes"),
             dry_run=os.getenv("LOCAL_PHOTO_AGENT_DRY_RUN", "false").lower() in ("1", "true", "yes"),
@@ -261,6 +277,7 @@ class AppConfig(EmbeddingConfig):
         _validate_positive("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", self.timeout, "LLM timeout")
         _validate_host("LOCAL_PHOTO_AGENT_DASH_HOST", self.dash_host, "Dash host")
         _validate_port_range("LOCAL_PHOTO_AGENT_DASH_PORT", self.dash_port, "Dash port")
+        _validate_concurrency("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", self.batch_concurrency)
         super().validate()
 
     def to_processing_config(self) -> ProcessingConfig:
@@ -272,6 +289,7 @@ class AppConfig(EmbeddingConfig):
             model=self.llm_model,
             timeout=self.timeout,
             default_prompt=self.default_prompt,
+            batch_concurrency=self.batch_concurrency,
             embedding_enabled=self.embedding_enabled,
             embedding_model=self.embedding_model,
             embedding_backend=self.embedding_backend,

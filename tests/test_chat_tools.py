@@ -482,6 +482,164 @@ class TestProcessTool:
         assert ProcessTool.metadata.name == "Process"
         assert ProcessTool.metadata.requires_folder is True
 
+    def test_process_uses_live_config_concurrency(self, tmp_path):
+        """ProcessTool forwards the live AppConfig batch_concurrency to process_paths."""
+        from src.config import AppConfig
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        config.batch_concurrency = 3
+        tool = ProcessTool(config)
+
+        captured = {}
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        class FakeProcessor:
+            def __init__(self, *a, **kw):
+                pass
+
+            def process_paths(self, paths, **kw):
+                captured["concurrency"] = kw.get("concurrency")
+                return {
+                    "total_found": len(paths),
+                    "processed": len(paths),
+                    "skipped": 0,
+                    "successes": len(paths),
+                    "failures": 0,
+                    "results": [],
+                }
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+            patch("plugins.llm.create_extractor"),
+            patch("src.sequential_processor.SequentialProcessor", FakeProcessor),
+            patch("src.simple_processing_tracker.SimpleProcessingTracker"),
+            patch("src.batch_state.write_batch_state"),
+            patch("src.batch_state.clear_batch_state"),
+            patch("src.utils.compute_duration_stats", return_value={
+                "min_ms": 0, "max_ms": 0, "avg_ms": 0, "total_s": 0.0,
+            }),
+        ):
+            result = tool.execute(folder_path=str(tmp_path))
+
+        assert result.status == "success"
+        assert captured["concurrency"] == 3
+
+    def test_process_concurrency_falls_back_to_one(self, tmp_path):
+        """When the live config has no override, ProcessTool uses its config value (1)."""
+        from src.config import AppConfig
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        assert config.batch_concurrency == 1
+        tool = ProcessTool(config)
+
+        captured = {}
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        class FakeProcessor:
+            def __init__(self, *a, **kw):
+                pass
+
+            def process_paths(self, paths, **kw):
+                captured["concurrency"] = kw.get("concurrency")
+                return {
+                    "total_found": len(paths), "processed": len(paths), "skipped": 0,
+                    "successes": len(paths), "failures": 0, "results": [],
+                }
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = [str(tmp_path / "a.jpg")]
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+            patch("plugins.llm.create_extractor"),
+            patch("src.sequential_processor.SequentialProcessor", FakeProcessor),
+            patch("src.simple_processing_tracker.SimpleProcessingTracker"),
+            patch("src.batch_state.write_batch_state"),
+            patch("src.batch_state.clear_batch_state"),
+            patch("src.utils.compute_duration_stats", return_value={
+                "min_ms": 0, "max_ms": 0, "avg_ms": 0, "total_s": 0.0,
+            }),
+        ):
+            tool.execute(folder_path=str(tmp_path))
+
+        assert captured["concurrency"] == 1
+
+    def test_process_folder_settings_override_config(self, tmp_path):
+        """The per-folder settings file overrides the AppConfig batch_concurrency."""
+        from src.config import AppConfig
+        from src.folder_settings import KEY_BATCH_CONCURRENCY, write_folder_setting
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        config.batch_concurrency = 1  # env/UI default
+        # Per-folder file says 4 — this must win at processing start.
+        write_folder_setting(str(tmp_path), KEY_BATCH_CONCURRENCY, 4)
+        tool = ProcessTool(config)
+
+        captured = {}
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        class FakeProcessor:
+            def __init__(self, *a, **kw):
+                pass
+
+            def process_paths(self, paths, **kw):
+                captured["concurrency"] = kw.get("concurrency")
+                return {
+                    "total_found": len(paths), "processed": len(paths), "skipped": 0,
+                    "successes": len(paths), "failures": 0, "results": [],
+                }
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = [str(tmp_path / "a.jpg")]
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+            patch("plugins.llm.create_extractor"),
+            patch("src.sequential_processor.SequentialProcessor", FakeProcessor),
+            patch("src.simple_processing_tracker.SimpleProcessingTracker"),
+            patch("src.batch_state.write_batch_state"),
+            patch("src.batch_state.clear_batch_state"),
+            patch("src.utils.compute_duration_stats", return_value={
+                "min_ms": 0, "max_ms": 0, "avg_ms": 0, "total_s": 0.0,
+            }),
+        ):
+            tool.execute(folder_path=str(tmp_path))
+
+        assert captured["concurrency"] == 4
+
 
 class TestStatusTool:
     """Tests for StatusTool."""

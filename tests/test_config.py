@@ -138,6 +138,27 @@ class TestProcessingConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             cfg.validate()
 
+    def test_default_batch_concurrency(self):
+        cfg = ProcessingConfig()
+        self.assertEqual(cfg.batch_concurrency, 1)
+
+    def test_validate_raises_on_non_positive_concurrency(self):
+        cfg = ProcessingConfig(batch_concurrency=0)
+        with self.assertRaises(ValueError):
+            cfg.validate()
+
+    def test_from_env_batch_concurrency(self):
+        env = {"LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY": "4"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = ProcessingConfig.from_env()
+            self.assertEqual(cfg.batch_concurrency, 4)
+
+    def test_from_env_invalid_concurrency_falls_back(self):
+        env = {"LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY": "not-an-int"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = ProcessingConfig.from_env()
+            self.assertEqual(cfg.batch_concurrency, 1)
+
     def test_from_env_llm_vars_take_precedence(self):
         env = {
             "LOCAL_PHOTO_AGENT_LLM_PORT": "1234",

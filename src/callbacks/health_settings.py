@@ -82,6 +82,48 @@ def register_settings_modal_callback(app):
         return "btn-settings" in prop_id
 
 
+def register_concurrency_setting_callback(app, app_config):
+    """Persist the batch concurrency to the active folder's settings file.
+
+    The Settings modal exposes a "Batch concurrency" number input
+    (``input-concurrency``). When the user changes it, this callback writes the
+    value to ``<active-folder>/.local-photo-agent/settings.json`` so it is read
+    at processing start (by ``/process`` and the CLI). It also keeps the
+    in-memory ``app_config.batch_concurrency`` in sync as a fallback. Values
+    <1 are coerced to 1 (sequential).
+
+    The active folder comes from the hidden ``input-folder`` field.
+    """
+
+    @app.callback(
+        Output("input-concurrency", "valid"),
+        Input("input-concurrency", "value"),
+        State("input-folder", "value"),
+        prevent_initial_call=True,
+    )
+    def update_concurrency(value, folder):
+        try:
+            concurrency = int(value) if value is not None else 1
+        except (TypeError, ValueError):
+            concurrency = 1
+        if concurrency < 1:
+            concurrency = 1
+        app_config.batch_concurrency = concurrency
+        # Persist to the per-folder settings file so it survives restarts and
+        # is read at processing start. Missing/empty folder just skips the
+        # write (the in-memory value still serves as a fallback).
+        if folder and str(folder).strip():
+            from src.folder_settings import KEY_BATCH_CONCURRENCY, write_folder_setting
+
+            try:
+                write_folder_setting(str(folder).strip(), KEY_BATCH_CONCURRENCY, concurrency)
+            except OSError as e:
+                logger.warning("Could not write folder concurrency setting for %s: %s", folder, e)
+        # Mark the input as valid (Dash uses `valid`/`invalid` styling); we
+        # always coerce to a valid value, so this is always True.
+        return True
+
+
 def _check_vector_search_status():
     """Check if vector search library is available.
 

@@ -67,6 +67,14 @@ class ProcessTool(BaseTool):
 
             # Create extractor
             config = ProcessingConfig.from_env()
+            # Apply the live UI setting for batch concurrency (Settings modal
+            # mutates the shared AppConfig instance held by self.config).
+            config.batch_concurrency = self.config.batch_concurrency
+            # Per-folder settings file is the source of truth at processing
+            # start: it overrides the env/UI default when present.
+            from src.folder_settings import get_batch_concurrency
+
+            config.batch_concurrency = get_batch_concurrency(folder_path, config.batch_concurrency)
             extractor = create_extractor(
                 backend=config.backend,
                 host=config.host,
@@ -114,6 +122,7 @@ class ProcessTool(BaseTool):
                         prompt=None,
                         resume=False,  # Don't skip any - we already filtered pending
                         progress_callback=update_progress,
+                        concurrency=config.batch_concurrency,
                     )
 
                     # Write final state

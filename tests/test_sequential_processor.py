@@ -1,6 +1,8 @@
 """Tests for the sequential processor module."""
 
 import tempfile
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -206,3 +208,156 @@ class TestErrorHandling:
 
         # Should have some failures
         assert result["failures"] > 0
+
+
+class TestBatchConcurrency:
+    """Tests for concurrent (batch) processing in process_paths."""
+
+    def _make_paths(self, temp_folder, count):
+        paths = []
+        for i in range(count):
+            image_path = Path(temp_folder) / f"img_{i}.jpg"
+            image_path.write_bytes(b"test image data")
+            paths.append(str(image_path))
+        return paths
+
+    def test_concurrency_processes_all_images(self, mock_extractor, temp_folder):
+        """Concurrent processing processes every image and reports correct stats."""
+        paths = self._make_paths(temp_folder, 5)
+
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            result = processor.process_paths(paths, prompt="p", resume=False, concurrency=3)
+
+        assert result["total_found"] == 5
+        assert result["processed"] == 5
+        assert result["successes"] == 5
+        assert result["failures"] == 0
+        assert len(result["results"]) == 5
+        # Every image was extracted exactly once
+        assert mock_extractor.extract_b64.call_count == 5
+
+    def test_concurrency_runs_in_parallel(self, mock_extractor, temp_folder):
+        """With concurrency > 1, multiple LLM calls overlap in time."""
+        paths = self._make_paths(temp_folder, 4)
+
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+
+        def slow_extract(*args, **kwargs):
+            nonlocal active, max_active
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.1)
+            with active_lock:
+                active -= 1
+            return ProcessingResult(
+                success=True,
+                model="test-model",
+                response='{"description": "test"}',
+                parsed={"description": "test"},
+                total_duration_ms=100.0,
+            )
+
+        mock_extractor.extract_b64.side_effect = slow_extract
+
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            result = processor.process_paths(paths, prompt="p", resume=False, concurrency=4)
+
+        assert result["successes"] == 4
+        # If calls were sequential, max_active would stay 1. With concurrency=4
+        # and 100ms work each, at least two must overlap.
+        assert max_active >= 2, f"expected parallel execution, max_active={max_active}"
+
+    def test_concurrency_one_is_sequential(self, mock_extractor, temp_folder):
+        """concurrency=1 must not overlap calls (sequential behaviour)."""
+        paths = self._make_paths(temp_folder, 3)
+
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+
+        def slow_extract(*args, **kwargs):
+            nonlocal active, max_active
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with active_lock:
+                active -= 1
+            return ProcessingResult(success=True, model="m", response="{}", parsed={})
+
+        mock_extractor.extract_b64.side_effect = slow_extract
+
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            processor.process_paths(paths, prompt="p", resume=False, concurrency=1)
+
+        assert max_active == 1
+
+    def test_concurrency_none_is_sequential(self, mock_extractor, temp_folder):
+        """concurrency=None must behave sequentially."""
+        paths = self._make_paths(temp_folder, 3)
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            result = processor.process_paths(paths, prompt="p", resume=False, concurrency=None)
+
+        assert result["successes"] == 3
+        assert mock_extractor.extract_b64.call_count == 3
+
+    def test_concurrency_with_failures(self, temp_folder):
+        """Failures in concurrent mode are counted and recorded, not raised."""
+        paths = self._make_paths(temp_folder, 4)
+
+        mock_extractor = MagicMock()
+        # Alternate success/failure
+        results = [
+            ProcessingResult(success=True, model="m", response="{}", parsed={}),
+            RuntimeError("boom"),
+            ProcessingResult(success=True, model="m", response="{}", parsed={}),
+            RuntimeError("boom"),
+        ]
+        call_iter = iter(results)
+        mock_extractor.extract_b64.side_effect = lambda *a, **k: next(call_iter)
+        mock_extractor.base_url = "http://test:11434"
+        mock_extractor.model = "test-model"
+
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            result = processor.process_paths(paths, prompt="p", resume=False, concurrency=2)
+
+        assert result["successes"] == 2
+        assert result["failures"] == 2
+        assert result["processed"] == 4
+
+    def test_concurrency_progress_callback(self, mock_extractor, temp_folder):
+        """Progress callback is invoked once per completed image in concurrent mode."""
+        paths = self._make_paths(temp_folder, 4)
+
+        progress_calls = []
+
+        def capture(processed, total):
+            progress_calls.append((processed, total))
+
+        processor = SequentialProcessor(mock_extractor)
+        with patch("src.sequential_processor.encode_image_file") as mock_encode:
+            mock_encode.return_value = "base64_test_data"
+            processor.process_paths(
+                paths, prompt="p", resume=False, concurrency=2, progress_callback=capture
+            )
+
+        # One progress call per completed image
+        assert len(progress_calls) == 4
+        # Total reported is the folder size
+        assert all(total == 4 for _, total in progress_calls)
+        # Processed counts are 1..4 in some order
+        assert sorted(processed for processed, _ in progress_calls) == [1, 2, 3, 4]
+

@@ -148,6 +148,31 @@ def build_connection_tab(app_config: AppConfig):
                 [
                     dbc.Col(
                         [
+                            dbc.Label("Batch concurrency"),
+                            dbc.Input(
+                                id="input-concurrency",
+                                type="number",
+                                value=app_config.batch_concurrency,
+                                min=1,
+                                step=1,
+                                className=INPUT_STYLE,
+                            ),
+                            dbc.FormText(
+                                "Images to process in parallel via Ollama. 1 = sequential. "
+                                "Values >1 require Ollama to be configured for concurrent requests "
+                                "(OLLAMA_NUM_PARALLEL). Used by /process.",
+                                className="text-muted small",
+                            ),
+                        ],
+                        width=12,
+                        className=MB_2,
+                    ),
+                ]
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
                             dbc.Label("\u00a0"),
                             dbc.Button(
                                 "Check Server",

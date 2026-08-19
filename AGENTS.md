@@ -47,6 +47,7 @@ Environment variables (full details in `README.md`):
 | `LOCAL_PHOTO_AGENT_LLM_MODEL` | `gemma4:e2b-it-qat` | Vision model tag |
 | `LOCAL_PHOTO_AGENT_LLM_BACKEND` | `ollama` | LLM backend (`ollama`, `dry_run`) |
 | `LOCAL_PHOTO_AGENT_LLM_TIMEOUT` | `600` | Request timeout (seconds) |
+| `LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY` | `1` | Number of images to process in parallel against the LLM backend (`1` = sequential). Requires the backend (e.g. Ollama) to be configured for concurrent requests (`OLLAMA_NUM_PARALLEL`). |
 | `LOCAL_PHOTO_AGENT_DASH_HOST` | `127.0.0.1` | Web app bind address |
 | `LOCAL_PHOTO_AGENT_DASH_PORT` | `8050` | Web app port |
 | `LOCAL_PHOTO_AGENT_DASH_DEBUG` | `false` | Enable Dash debug mode |
