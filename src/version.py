@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Fallback used when the package is not installed (e.g. ``python main.py``
 # run directly from a checkout). Keep this in sync with pyproject.toml.
-_FALLBACK_VERSION = "0.1.0"
+_FALLBACK_VERSION = "0.1.1"
 
 try:  # pragma: no cover - exercised only when installed
     from importlib.metadata import PackageNotFoundError
