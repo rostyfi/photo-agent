@@ -67,6 +67,7 @@ Environment variables (full details in `README.md`):
 | `src/interfaces.py` | `BasePhotoExtractor`, `ProcessingResult`, `ErrorCode` abstractions |
 | `src/sequential_processor.py` | `SequentialProcessor`, `process_image()`, `process_paths()` |
 | `src/simple_processing_tracker.py` | `SimpleProcessingTracker` for SQLite-based progress tracking |
+| `src/folder_settings.py` | Per-folder `settings.json` store: `apply_folder_settings()`, `write_folder_settings()`, `get_batch_concurrency()` |
 | `src/sidecar/database/db.py` | `FeaturesDatabase` — SQLite schema and operations |
 | `src/services/chat.py` | `ChatService` — centralized chat operations with tool support |
 | `src/services/chat_tools/` | Tool handlers (`/about`, `/count`, `/find`, `/process`, `/scan`, `/status`, `/tools`) |

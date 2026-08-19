@@ -199,6 +199,12 @@ def create_app(config=None):
     """
     if config is None:
         config = AppConfig.from_env()
+    # Per-folder settings.json overrides environment defaults so values the
+    # user saved via the Settings modal (or set via setup.sh --host) survive
+    # restarts. Best-effort: missing/unreadable file leaves env values intact.
+    from src.folder_settings import apply_folder_settings
+
+    apply_folder_settings(config, config.folder_path)
     config.validate()
 
     cache = diskcache.FanoutCache("/tmp/dash-cache", size_limit=2**30, shards=4)

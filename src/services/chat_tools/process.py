@@ -71,10 +71,11 @@ class ProcessTool(BaseTool):
             # mutates the shared AppConfig instance held by self.config).
             config.batch_concurrency = self.config.batch_concurrency
             # Per-folder settings file is the source of truth at processing
-            # start: it overrides the env/UI default when present.
-            from src.folder_settings import get_batch_concurrency
+            # start: it overrides env/UI defaults (host/port/model/backend,
+            # timeout, batch concurrency, embedding options) when present.
+            from src.folder_settings import apply_folder_settings
 
-            config.batch_concurrency = get_batch_concurrency(folder_path, config.batch_concurrency)
+            apply_folder_settings(config, folder_path)
             extractor = create_extractor(
                 backend=config.backend,
                 host=config.host,

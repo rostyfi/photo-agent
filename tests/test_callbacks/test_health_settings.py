@@ -8,6 +8,7 @@ import src.callbacks.health_settings as _hs
 from plugins.llm import create_extractor
 from src.callbacks.health_settings import (
     register_concurrency_setting_callback,
+    register_connection_settings_callback,
     register_health_callback,
     register_settings_modal_callback,
 )
@@ -57,7 +58,7 @@ class TestHealthCallback(unittest.TestCase):
     def test_healthy_returns_success(self):
         cb = find_callback(self.app, "health-status", "children").__wrapped__
         # Use dry-run mode to avoid connection issues
-        result = cb(1, "192.168.0.150", "11434", "gemma4:e2b-it-qat", "ollama", "120", True)
+        result = cb(1, "127.0.0.1", "11434", "gemma4:e2b-it-qat", "ollama", "120", True)
         self.assertIn("Dry-run", str(result))
         self.assertIn("info", str(result))
 
@@ -150,6 +151,98 @@ class TestConcurrencySettingCallback(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._cb()(3, None)
             self.assertFalse((Path(tmpdir) / ".local-photo-agent").exists())
+
+
+class TestConnectionSettingsCallback(unittest.TestCase):
+    def setUp(self):
+        self.app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+        self.app.layout = html.Div([html.Div(id="settings-persist-dummy")])
+        self.app_config = AppConfig()
+        register_connection_settings_callback(self.app, self.app_config)
+
+    def _cb(self):
+        return find_callback(self.app, "settings-persist-dummy", "children").__wrapped__
+
+    def test_persists_settings_to_folder_file(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._cb()(
+                "10.0.0.9",  # host
+                12345,  # port
+                "custom-model",  # model
+                "dry_run",  # backend
+                90,  # timeout
+                False,  # recursive
+                True,  # dry_run
+                False,  # embedding_enabled
+                "all-minilm",  # embedding_model
+                "ollama",  # embedding_backend
+                tmpdir,  # folder
+            )
+            settings = json.loads((Path(tmpdir) / ".local-photo-agent" / "settings.json").read_text())
+            assert settings["llm_host"] == "10.0.0.9"
+            assert settings["llm_port"] == 12345
+            assert settings["llm_model"] == "custom-model"
+            assert settings["llm_backend"] == "dry_run"
+            assert settings["timeout"] == 90
+            assert settings["recursive"] is False
+            assert settings["dry_run"] is True
+            assert settings["embedding_enabled"] is False
+            assert settings["embedding_model"] == "all-minilm"
+            assert settings["embedding_backend"] == "ollama"
+
+    def test_syncs_app_config_in_memory(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._cb()(
+                "10.0.0.9", 12345, "custom-model", "dry_run", 90,
+                False, True, False, "all-minilm", "ollama",
+                tmpdir,
+            )
+            assert self.app_config.llm_host == "10.0.0.9"
+            assert self.app_config.llm_port == 12345
+            assert self.app_config.llm_model == "custom-model"
+            assert self.app_config.dry_run is True
+            assert self.app_config.embedding_enabled is False
+
+    def test_empty_folder_skips_write(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self._cb()(
+                "10.0.0.9", 12345, "m", "b", 90, True, False, True, "em", "eb", None,
+            )
+            assert result is dash.no_update
+            assert not (Path(tmpdir) / ".local-photo-agent").exists()
+
+    def test_blank_string_values_are_dropped(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._cb()(
+                "   ",  # blank host -> dropped
+                12345,
+                "",  # blank model -> dropped
+                "dry_run",
+                90,
+                False,
+                True,
+                False,
+                "all-minilm",
+                "ollama",
+                tmpdir,
+            )
+            settings = json.loads((Path(tmpdir) / ".local-photo-agent" / "settings.json").read_text())
+            assert "llm_host" not in settings
+            assert "llm_model" not in settings
+            assert settings["llm_port"] == 12345
 
 
 if __name__ == "__main__":

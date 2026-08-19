@@ -115,6 +115,8 @@ def create_layout(app_config: AppConfig):
             html.Div(id="scroll-dummy", style={"display": "none"}),
             html.Div(id="chat-nav-dummy", style={"display": "none"}),
             html.Div(id="reveal-dummy", style={"display": "none"}),
+            # Dummy element for settings persistence callback output
+            html.Div(id="settings-persist-dummy", style={"display": "none"}),
             # Footer
             html.Footer(
                 html.P(

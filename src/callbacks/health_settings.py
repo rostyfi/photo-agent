@@ -124,6 +124,95 @@ def register_concurrency_setting_callback(app, app_config):
         return True
 
 
+def register_connection_settings_callback(app, app_config):
+    """Persist the remaining Settings modal inputs to the active folder's settings.json.
+
+    Mirrors :func:`register_concurrency_setting_callback` for the other
+    user-editable settings: LLM host/port/model/backend, timeout, recursive,
+    dry-run, and the embedding options. When any of these changes, the current
+    values are written to ``<active-folder>/.local-photo-agent/settings.json``
+    so they survive restarts and are applied on app start by
+    ``apply_folder_settings``. The shared ``app_config`` is kept in sync in
+    memory (best-effort) for runtime readers.
+
+    The active folder comes from the hidden ``input-folder`` field.
+    """
+
+    @app.callback(
+        Output("settings-persist-dummy", "children"),
+        Input("input-host", "value"),
+        Input("input-port", "value"),
+        Input("input-model", "value"),
+        Input("input-backend", "value"),
+        Input("input-timeout", "value"),
+        Input("chk-recursive", "value"),
+        Input("chk-dry-run", "value"),
+        Input("chk-embedding-enabled", "value"),
+        Input("input-embedding-model", "value"),
+        Input("input-embedding-backend", "value"),
+        State("input-folder", "value"),
+        prevent_initial_call=True,
+    )
+    def persist_settings(
+        host,
+        port,
+        model,
+        backend,
+        timeout,
+        recursive,
+        dry_run,
+        embedding_enabled,
+        embedding_model,
+        embedding_backend,
+        folder,
+    ):
+        if not folder or not str(folder).strip():
+            return dash.no_update
+
+        from src.folder_settings import (
+            KEY_DRY_RUN,
+            KEY_EMBEDDING_BACKEND,
+            KEY_EMBEDDING_ENABLED,
+            KEY_EMBEDDING_MODEL,
+            KEY_LLM_BACKEND,
+            KEY_LLM_HOST,
+            KEY_LLM_MODEL,
+            KEY_LLM_PORT,
+            KEY_RECURSIVE,
+            KEY_TIMEOUT,
+            _apply_settings_dict,
+            write_folder_settings,
+        )
+
+        raw = {
+            KEY_LLM_HOST: host,
+            KEY_LLM_PORT: port,
+            KEY_LLM_MODEL: model,
+            KEY_LLM_BACKEND: backend,
+            KEY_TIMEOUT: timeout,
+            KEY_RECURSIVE: recursive,
+            KEY_DRY_RUN: dry_run,
+            KEY_EMBEDDING_ENABLED: embedding_enabled,
+            KEY_EMBEDDING_MODEL: embedding_model,
+            KEY_EMBEDDING_BACKEND: embedding_backend,
+        }
+        # Drop empty/None values so we never clobber a saved value with a
+        # blank form field (e.g. while the user is mid-typing).
+        updates = {
+            k: v
+            for k, v in raw.items()
+            if v is not None and not (isinstance(v, str) and not v.strip())
+        }
+        if updates:
+            try:
+                write_folder_settings(str(folder).strip(), updates)
+                # Keep the shared config in sync for runtime readers.
+                _apply_settings_dict(app_config, updates)
+            except OSError as e:
+                logger.warning("Could not write folder settings for %s: %s", folder, e)
+        return ""
+
+
 def _check_vector_search_status():
     """Check if vector search library is available.
 

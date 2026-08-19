@@ -7,10 +7,23 @@ import pytest
 
 from src.folder_settings import (
     KEY_BATCH_CONCURRENCY,
+    KEY_DRY_RUN,
+    KEY_EMBEDDING_BACKEND,
+    KEY_EMBEDDING_ENABLED,
+    KEY_EMBEDDING_MODEL,
+    KEY_LLM_BACKEND,
+    KEY_LLM_HOST,
+    KEY_LLM_MODEL,
+    KEY_LLM_PORT,
+    KEY_RECURSIVE,
+    KEY_TIMEOUT,
+    apply_folder_settings,
     get_batch_concurrency,
     read_folder_settings,
     write_folder_setting,
+    write_folder_settings,
 )
+from src.config import AppConfig, ProcessingConfig
 
 
 def test_read_returns_empty_when_missing(tmp_path):
@@ -73,3 +86,115 @@ def test_write_overwrites_existing_value(tmp_path):
     assert json.loads((tmp_path / ".local-photo-agent" / "settings.json").read_text()) == {
         "batch_concurrency": 8
     }
+
+
+def test_write_folder_settings_upserts_multiple_keys_atomically(tmp_path):
+    write_folder_setting(tmp_path, "other", "x")
+    write_folder_settings(
+        tmp_path,
+        {KEY_LLM_HOST: "10.0.0.5", KEY_LLM_PORT: 12345, KEY_BATCH_CONCURRENCY: 3},
+    )
+    settings = read_folder_settings(tmp_path)
+    assert settings == {
+        "other": "x",
+        "llm_host": "10.0.0.5",
+        "llm_port": 12345,
+        "batch_concurrency": 3,
+    }
+
+
+def test_apply_folder_settings_overrides_app_config(tmp_path):
+    write_folder_settings(
+        tmp_path,
+        {
+            KEY_LLM_HOST: "10.0.0.9",
+            KEY_LLM_PORT: 12345,
+            KEY_LLM_MODEL: "custom-model",
+            KEY_LLM_BACKEND: "dry_run",
+            KEY_TIMEOUT: 90,
+            KEY_RECURSIVE: False,
+            KEY_DRY_RUN: True,
+            KEY_EMBEDDING_ENABLED: False,
+            KEY_EMBEDDING_MODEL: "all-minilm",
+            KEY_EMBEDDING_BACKEND: "ollama",
+            KEY_BATCH_CONCURRENCY: 4,
+        },
+    )
+    config = AppConfig.from_env()
+    apply_folder_settings(config, tmp_path)
+    assert config.llm_host == "10.0.0.9"
+    assert config.llm_port == 12345
+    assert config.llm_model == "custom-model"
+    assert config.llm_backend == "dry_run"
+    assert config.timeout == 90
+    assert config.recursive is False
+    assert config.dry_run is True
+    assert config.embedding_enabled is False
+    assert config.embedding_model == "all-minilm"
+    assert config.embedding_backend == "ollama"
+    assert config.batch_concurrency == 4
+
+
+def test_apply_folder_settings_overrides_processing_config(tmp_path):
+    write_folder_settings(
+        tmp_path,
+        {KEY_LLM_HOST: "10.0.0.9", KEY_LLM_PORT: 12345, KEY_LLM_MODEL: "custom-model", KEY_BATCH_CONCURRENCY: 7},
+    )
+    config = ProcessingConfig.from_env()
+    apply_folder_settings(config, tmp_path)
+    # ProcessingConfig uses bare host/port/model attribute names
+    assert config.host == "10.0.0.9"
+    assert config.port == 12345
+    assert config.model == "custom-model"
+    assert config.batch_concurrency == 7
+
+
+def test_apply_folder_settings_skips_absent_keys(tmp_path):
+    write_folder_setting(tmp_path, KEY_LLM_HOST, "10.0.0.9")
+    config = AppConfig.from_env()
+    original_port = config.llm_port
+    apply_folder_settings(config, tmp_path)
+    assert config.llm_host == "10.0.0.9"
+    # port was not stored, so the env default is preserved
+    assert config.llm_port == original_port
+
+
+def test_apply_folder_settings_no_file_leaves_config_untouched(tmp_path):
+    config = AppConfig.from_env()
+    original_host = config.llm_host
+    apply_folder_settings(config, tmp_path)
+    assert config.llm_host == original_host
+
+
+def test_apply_folder_settings_skips_invalid_values(tmp_path):
+    write_folder_settings(
+        tmp_path,
+        {KEY_LLM_PORT: "not-a-port", KEY_LLM_HOST: "10.0.0.9"},
+    )
+    config = AppConfig.from_env()
+    original_port = config.llm_port
+    apply_folder_settings(config, tmp_path)
+    assert config.llm_host == "10.0.0.9"
+    # invalid port is skipped, env default preserved
+    assert config.llm_port == original_port
+
+
+def test_apply_folder_settings_coerces_bool_strings(tmp_path):
+    write_folder_settings(
+        tmp_path,
+        {KEY_RECURSIVE: "false", KEY_DRY_RUN: "true", KEY_EMBEDDING_ENABLED: "yes"},
+    )
+    config = AppConfig.from_env()
+    apply_folder_settings(config, tmp_path)
+    assert config.recursive is False
+    assert config.dry_run is True
+    assert config.embedding_enabled is True
+
+
+def test_apply_folder_settings_skips_empty_string_host(tmp_path):
+    write_folder_setting(tmp_path, KEY_LLM_HOST, "   ")
+    config = AppConfig.from_env()
+    original_host = config.llm_host
+    apply_folder_settings(config, tmp_path)
+    # empty/whitespace host does not clobber the existing value
+    assert config.llm_host == original_host

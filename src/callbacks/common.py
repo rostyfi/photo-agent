@@ -35,11 +35,16 @@ def _get_app_config() -> AppConfig:
 
     Callback hot paths should call this instead of ``AppConfig.from_env()``
     to avoid re-parsing the environment (and re-running ``load_dotenv()``) on
-    every invocation.
+    every invocation. Per-folder ``settings.json`` overrides are applied so the
+    cached config matches the one used at app start.
     """
     global _CACHED_APP_CONFIG
     if _CACHED_APP_CONFIG is None:
-        _CACHED_APP_CONFIG = AppConfig.from_env()
+        config = AppConfig.from_env()
+        from src.folder_settings import apply_folder_settings
+
+        apply_folder_settings(config, config.folder_path)
+        _CACHED_APP_CONFIG = config
     return _CACHED_APP_CONFIG
 
 

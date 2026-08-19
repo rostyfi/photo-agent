@@ -17,6 +17,7 @@ from .chat import (
 from .errors import register_all_errors_callbacks
 from .health_settings import (
     register_concurrency_setting_callback,
+    register_connection_settings_callback,
     register_embedding_status_indicator_callback,
     register_health_callback,
     register_settings_modal_callback,
@@ -58,6 +59,7 @@ __all__ = [
     "register_chat_tag_remove_callback",
     "register_clear_chat_callback",
     "register_concurrency_setting_callback",
+    "register_connection_settings_callback",
     "register_detail_modal_callback",
     "register_display_similar_photos_callback",
     "register_embedding_status_indicator_callback",
@@ -105,6 +107,7 @@ def register_callbacks(app, create_extractor_fn, processing_config, app_config: 
     register_chat_tag_remove_callback(app)
     register_settings_modal_callback(app)
     register_concurrency_setting_callback(app, app_config)
+    register_connection_settings_callback(app, app_config)
     register_sql_explorer_callback(app)
     register_detail_modal_callback(app)
     register_fullscreen_open_callback(app)

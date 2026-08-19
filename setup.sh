@@ -7,6 +7,9 @@
 #   ./setup.sh --no-cache          # Build without using Docker cache
 #   ./setup.sh --no-cache /path/to/photos  # Build without cache and mount folder
 #   ./setup.sh --port 9000         # Run the app on a custom host port
+#   ./setup.sh --host 192.168.1.5 /path/to/photos
+#                                  # Set the LLM (Ollama) host IP and persist it
+#                                  # to the mounted folder's .local-photo-agent/settings.json
 
 set -e
 
@@ -14,6 +17,7 @@ set -e
 USE_CACHE=true
 FOLDER_PATH=""
 DASH_PORT=""
+LLM_HOST=""
 
 # Process all arguments
 while [[ $# -gt 0 ]]; do
@@ -28,6 +32,14 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             DASH_PORT="$2"
+            shift 2
+            ;;
+        --host)
+            if [[ -z "$2" ]]; then
+                echo "Error: --host requires a value (the LLM/Ollama host IP)."
+                exit 1
+            fi
+            LLM_HOST="$2"
             shift 2
             ;;
         *)
@@ -69,10 +81,28 @@ services:
 EOF
 
     echo "Mounting host folder: $ABS_FOLDER -> /photos"
+
+    # Persist the LLM host IP to the per-folder settings file so the app picks
+    # it up on start. Requires a mounted folder (the settings file lives in
+    # <folder>/.local-photo-agent/settings.json).
+    if [ -n "$LLM_HOST" ]; then
+        if python3 -c "from src.folder_settings import write_folder_setting; write_folder_setting('$ABS_FOLDER', 'llm_host', '$LLM_HOST')" 2>/dev/null; then
+            echo "LLM host set to: $LLM_HOST (saved to $ABS_FOLDER/.local-photo-agent/settings.json)"
+        else
+            echo "Warning: could not write llm_host setting (python3 or src.folder_settings unavailable)."
+        fi
+    fi
 else
     if [ -f "$COMPOSE_OVERRIDE" ]; then
         rm -f "$COMPOSE_OVERRIDE"
     fi
+fi
+
+# --host requires a mounted folder to write the per-folder settings file.
+if [ -n "$LLM_HOST" ] && [ -z "$FOLDER_PATH" ]; then
+    echo "Warning: --host is ignored without a mounted folder (the setting is"
+    echo "         stored in <folder>/.local-photo-agent/settings.json)."
+    echo "         Pass a folder: ./setup.sh --host $LLM_HOST /path/to/photos"
 fi
 
 echo "================================================"

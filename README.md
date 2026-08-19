@@ -2,6 +2,21 @@
 
 A lightweight Python application for extracting structured features, descriptions, and metadata from photos using Ollama vision models over a local network.
 
+## Motivation
+
+Both me and my family members had literally tens of thousands of photos of different things taken over a long time, all the photos are being stored on our family NAS and it's been very difficult to find something in those photos if, for example, the exact time when the photo was taken is not known. This application is my attempt to resolve this issue with a side quest of checking how Mistral.ai models work, as most of the initial code was created with Mistral Medium 3.5 which was later refactored with GLM-5.2. The application is designed to work with local LLM hosted on Ollama, and process photos stored on a local NAS. No data is leaving users home local network.
+
+Users can process and look for photos in a few easy steps. After the application is started (see [Quick Start with Docker](#quick-start-with-docker)) we can start the photo processing by simply prompting the agent.
+![Chat scan and processing start](assets/images/scan_and_processing_start.png)
+
+After the processing is done images can be searched using a simple "human" language like "find me photos from a renovation I've had last summer."
+![Search using embeddings](assets/images/search_using_embeddings.png)
+
+After photos are found they can be viewed in details or slideshow mode.
+![Photo details modal](assets/images/details.png)
+
+As this application was intended to be used by non-technical people the designing principle was that the agent cannot modify photo files in any way. It only writes descriptions, embeddings and metadata into its own local folder that's being stored together with photos, ensuring data locality. The application is intended to be run on a local network, so it does not have any substantial security features, though they may be added in the fututre releases.
+
 ## Features
 
 - Connect to an Ollama instance via configurable host/port
@@ -99,11 +114,16 @@ Run the one-command setup script:
 
 # Start the app and mount a host folder into /photos in the container
 ./setup.sh /path/to/your/photos
+
+# Set the LLM (Ollama) host IP and persist it to the folder's settings
+./setup.sh --host 192.168.1.5 /path/to/your/photos
 ```
 
 Then open [http://localhost:8050](http://localhost:8050).
 
 **Tip:** When you pass a folder to `setup.sh`, it automatically creates a temporary `docker-compose.override.yml` that mounts your folder into the container as `/photos`. You can then point the agent at `/photos` (via the `LOCAL_PHOTO_AGENT_FOLDER` setting or a chat `/scan /photos` command) to process that folder.
+
+**`--host` and per-folder settings:** `--host <ip>` writes the LLM host into `<folder>/.local-photo-agent/settings.json` (the same per-folder settings file the Settings modal uses). The app reads this file on start, so the saved host overrides `LOCAL_PHOTO_AGENT_LLM_HOST` from the environment. `--host` requires a mounted folder (the settings file lives inside it). Use `./setup-arm.sh` the same way on ARM64.
 
 ### Manual Docker commands
 
@@ -339,16 +359,16 @@ In the web UI, click **Copy Path** in the detail modal or the fullscreen viewer.
 
 #### Path mapping (`LOCAL_PHOTO_AGENT_REVEAL_MAP`)
 
-When the server-side path differs from the path you want to see (e.g. a Docker bind mount exposes host `/home/rost/Pictures` as `/photos` inside the container), set `LOCAL_PHOTO_AGENT_REVEAL_MAP` to a newline- or semicolon-separated list of `container_prefix=host_prefix` entries. The first matching prefix is replaced before the path is returned:
+When the server-side path differs from the path you want to see (e.g. a Docker bind mount exposes host `/home/user/Pictures` as `/photos` inside the container), set `LOCAL_PHOTO_AGENT_REVEAL_MAP` to a newline- or semicolon-separated list of `container_prefix=host_prefix` entries. The first matching prefix is replaced before the path is returned:
 
 ```
-LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/rost/Pictures
+LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/user/Pictures
 ```
 
 Multiple entries:
 
 ```
-LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/rost/Pictures;/data=/mnt/data
+LOCAL_PHOTO_AGENT_REVEAL_MAP=/photos=/home/user/Pictures;/data=/mnt/data
 ```
 
 When unset (the default), the app auto-detects the mapping by reading `/proc/self/mountinfo` inside the container (no manual config needed for Docker bind mounts). On the host (no container), the server-side path is returned as-is.
@@ -365,7 +385,7 @@ pip install -r requirements.txt
 from plugins.llm import create_extractor
 
 extractor = create_extractor(
-    host="192.168.0.150",
+    host="127.0.0.1",
     port=11434,
     model="gemma4:e2b-it-qat",
 )
@@ -381,7 +401,7 @@ from plugins.llm import create_extractor
 from src.config import ProcessingConfig
 from src.sequential_processor import process_paths
 
-extractor = create_extractor(host="192.168.0.150", port=11434, model="gemma4:e2b-it-qat")
+extractor = create_extractor(host="127.0.0.1", port=11434, model="gemma4:e2b-it-qat")
 config = ProcessingConfig.from_env()  # Or specify individual parameters
 
 # Process multiple images sequentially
@@ -431,6 +451,7 @@ When a HEIC image is processed or previewed in the web UI, it is automatically c
 - **Automatic resume**: By default, the CLI will skip already-processed images on consecutive runs (use `--no-resume` to force reprocessing).
 - **Parallel batch processing**: Set `--concurrency N` (CLI) or `LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY=N` (env) to process up to `N` images in parallel against the LLM backend. The default `1` preserves the historical sequential behaviour. Database writes are serialized internally, so only the LLM/embedding network calls run concurrently. This requires the backend to accept concurrent requests — for Ollama, set `OLLAMA_NUM_PARALLEL` (and ensure enough model slots/contexts) or requests will simply queue server-side with no speedup. In the web UI, adjust **Settings → Connection → Batch concurrency** to change the value used by `/process` without restarting the app.
 - **Per-folder settings**: The batch concurrency value is persisted per folder in `<folder>/.local-photo-agent/settings.json` and read at processing start, so each folder can have its own parallelism. When you change **Settings → Connection → Batch concurrency** in the web UI, it is written to the active folder's settings file. On processing start (CLI or `/process`), the per-folder file overrides the env/CLI default when present; otherwise the env/CLI default applies.
+- **Persisted connection settings**: The same per-folder `settings.json` also stores the LLM host/port/model/backend, timeout, recursive/dry-run flags, and embedding options when you change them in the **Settings** modal. On app start, stored values override the environment defaults, so the Settings form and the chat/processing clients pick up the saved values. `setup.sh --host <ip>` (and `setup-arm.sh --host <ip>`) pre-fills the LLM host into this file at build time; all other settings are only written when you change them in the UI.
 
 ## Key Design Principles
 
