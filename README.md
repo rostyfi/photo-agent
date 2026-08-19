@@ -15,7 +15,7 @@ After the processing is done images can be searched using a simple "human" langu
 After photos are found they can be viewed in details or slideshow mode.
 ![Photo details modal](assets/images/details.png)
 
-As this application was intended to be used by non-technical people the designing principle was that the agent cannot modify photo files in any way. It only writes descriptions, embeddings and metadata into its own local folder that's being stored together with photos, ensuring data locality. The application is intended to be run on a local network, so it does not have any substantial security features, though they may be added in the fututre releases.
+As this application was intended to be used by non-technical people the designing principle was that the agent cannot modify photo files in any way. It only writes descriptions, embeddings and metadata into its own local folder that's being stored together with photos, ensuring data locality. The application is intended to be run on a local network, so it does not have any substantial security features, though they may be added in the future releases.
 
 ## Features
 
