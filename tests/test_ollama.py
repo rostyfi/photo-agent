@@ -205,5 +205,153 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         self.assertIn("ollama", backends)
 
 
+class TestOllamaChatClient(unittest.TestCase):
+    def setUp(self):
+        from plugins.llm import OllamaChatClient
+
+        self.client = OllamaChatClient(
+            host="localhost",
+            port=11434,
+            model="test-model",
+            timeout=30,
+            max_retries=1,
+        )
+
+    def _capture_payload(self, response_json):
+        """Patch the session post and return the (payload, mock_response)."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = response_json
+        captured = {}
+
+        def _post(url, json=None, **kwargs):
+            captured["payload"] = json
+            return mock_response
+
+        return captured, _post, mock_response
+
+    def test_chat_without_think_omits_think_param(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "hello"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            result = self.client.chat("hi")
+        self.assertEqual(result, "hello")
+        self.assertNotIn("think", captured["payload"])
+
+    def test_chat_with_think_sends_think_true(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "hello"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat("hi", think=True)
+        self.assertTrue(captured["payload"].get("think"))
+
+    def test_chat_uses_api_chat_endpoint(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "hello"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post) as mock_post:
+            self.client.chat("hi")
+        url = mock_post.call_args[0][0]
+        self.assertTrue(url.endswith("/api/chat"), f"expected /api/chat, got {url}")
+
+    def test_chat_with_thinking_returns_trace(self):
+        captured, _post, _ = self._capture_payload(
+            {"message": {"content": "OK", "thinking": "reasoning here"}, "done": True}
+        )
+        with patch.object(self.client._session, "post", side_effect=_post):
+            response, thinking = self.client.chat_with_thinking("hi", think=True)
+        self.assertEqual(response, "OK")
+        self.assertEqual(thinking, "reasoning here")
+        self.assertTrue(captured["payload"].get("think"))
+
+    def test_chat_with_thinking_no_trace_returns_none(self):
+        _, _post, _ = self._capture_payload({"message": {"content": "OK"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            response, thinking = self.client.chat_with_thinking("hi", think=False)
+        self.assertEqual(response, "OK")
+        self.assertIsNone(thinking)
+
+    def test_chat_builds_messages_array(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "hello"}, "done": True})
+        history = [
+            {"sender": "user", "content": "hi", "type": "text"},
+            {"sender": "assistant", "content": "hello", "type": "text"},
+        ]
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat("how are you", system_prompt="You are helpful.", history=history)
+        msgs = captured["payload"]["messages"]
+        self.assertEqual(msgs[0], {"role": "system", "content": "You are helpful."})
+        self.assertEqual(msgs[1], {"role": "user", "content": "hi"})
+        self.assertEqual(msgs[2], {"role": "assistant", "content": "hello"})
+        self.assertEqual(msgs[3], {"role": "user", "content": "how are you"})
+
+    def test_think_injects_control_token_in_system_prompt(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "ok"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat_with_thinking("hi", system_prompt="You are helpful.", think=True)
+        system_msg = captured["payload"]["messages"][0]
+        self.assertEqual(system_msg["role"], "system")
+        self.assertTrue(system_msg["content"].startswith("<|think|>"), system_msg["content"])
+        self.assertIn("Reason briefly", system_msg["content"])
+        self.assertIn("You are helpful.", system_msg["content"])
+        self.assertTrue(captured["payload"].get("think"))
+
+    def test_think_without_system_prompt_creates_token_only_message(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "ok"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat_with_thinking("hi", think=True)
+        system_msg = captured["payload"]["messages"][0]
+        self.assertEqual(system_msg["role"], "system")
+        self.assertTrue(system_msg["content"].startswith("<|think|>"))
+        self.assertIn("Reason briefly", system_msg["content"])
+
+    def test_no_think_does_not_inject_control_token(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "ok"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat("hi", system_prompt="You are helpful.", think=False)
+        system_msg = captured["payload"]["messages"][0]
+        self.assertEqual(system_msg["content"], "You are helpful.")
+        self.assertNotIn("think", captured["payload"])
+
+    def test_chat_stream_events_separates_thinking_and_response(self):
+        lines = [
+            json.dumps({"message": {"thinking": "Hmm"}, "done": False}),
+            json.dumps({"message": {"thinking": " more"}, "done": False}),
+            json.dumps({"message": {"content": "An"}, "done": False}),
+            json.dumps({"message": {"content": "swer"}, "done": False}),
+            json.dumps({"message": {"content": ""}, "done": True}),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.iter_lines.return_value = [s.encode() for s in lines]
+
+        with patch.object(self.client._session, "post", return_value=mock_response):
+            chunks = list(self.client.chat_stream_events("hi", think=True))
+
+        kinds = [(c.kind, c.content) for c in chunks]
+        self.assertEqual(
+            kinds,
+            [
+                ("thinking", "Hmm"),
+                ("thinking", " more"),
+                ("response", "An"),
+                ("response", "swer"),
+            ],
+        )
+
+    def test_chat_stream_events_without_think_only_response(self):
+        lines = [
+            json.dumps({"message": {"content": "Hi"}, "done": False}),
+            json.dumps({"message": {"content": ""}, "done": True}),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.iter_lines.return_value = [s.encode() for s in lines]
+
+        with patch.object(self.client._session, "post", return_value=mock_response):
+            chunks = list(self.client.chat_stream_events("hi", think=False))
+
+        self.assertEqual([c.kind for c in chunks], ["response"])
+        self.assertEqual(chunks[0].content, "Hi")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,3 +77,14 @@ class BaseEmbeddingGenerator(ABC):
             True if the backend is reachable and operational, False otherwise.
         """
         return True
+
+    def list_models(self) -> list[str]:
+        """List available embedding models from the backend.
+
+        Default implementation returns an empty list. Override for backends
+        that can enumerate models (e.g. Ollama).
+
+        Returns:
+            List of model name strings that support embedding generation.
+        """
+        return []

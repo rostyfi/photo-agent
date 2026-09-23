@@ -6,14 +6,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # Mypy runs in advisory mode: it reports type errors but does not block
-  # commits. There is a known baseline of ~65 pre-existing type errors.
-  # Remove `|| true` once those are resolved to make it a blocking gate.
+  # Mypy runs as a blocking gate: type errors will prevent pushes.
   - repo: local
     hooks:
       - id: mypy
-        name: mypy (advisory)
-        entry: bash -c 'mypy --config-file=pyproject.toml src plugins main.py app.py || true'
+        name: mypy
+        entry: bash -c 'mypy --config-file=pyproject.toml src plugins main.py app.py'
         language: system
         types: [python]
         pass_filenames: false

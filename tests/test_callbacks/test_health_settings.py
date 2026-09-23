@@ -177,9 +177,11 @@ class TestConnectionSettingsCallback(unittest.TestCase):
                 90,  # timeout
                 False,  # recursive
                 True,  # dry_run
+                True,  # debug_reasoning
                 False,  # embedding_enabled
                 "all-minilm",  # embedding_model
                 "ollama",  # embedding_backend
+                25,  # slideshow_threshold
                 tmpdir,  # folder
             )
             settings = json.loads((Path(tmpdir) / ".local-photo-agent" / "settings.json").read_text())
@@ -190,24 +192,38 @@ class TestConnectionSettingsCallback(unittest.TestCase):
             assert settings["timeout"] == 90
             assert settings["recursive"] is False
             assert settings["dry_run"] is True
+            assert settings["debug_reasoning"] is True
             assert settings["embedding_enabled"] is False
             assert settings["embedding_model"] == "all-minilm"
             assert settings["embedding_backend"] == "ollama"
+            assert settings["slideshow_threshold"] == 25
 
     def test_syncs_app_config_in_memory(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             self._cb()(
-                "10.0.0.9", 12345, "custom-model", "dry_run", 90,
-                False, True, False, "all-minilm", "ollama",
+                "10.0.0.9",
+                12345,
+                "custom-model",
+                "dry_run",
+                90,
+                False,
+                True,
+                True,
+                False,
+                "all-minilm",
+                "ollama",
+                25,
                 tmpdir,
             )
             assert self.app_config.llm_host == "10.0.0.9"
             assert self.app_config.llm_port == 12345
             assert self.app_config.llm_model == "custom-model"
             assert self.app_config.dry_run is True
+            assert self.app_config.debug_reasoning is True
             assert self.app_config.embedding_enabled is False
+            assert self.app_config.slideshow_threshold == 25
 
     def test_empty_folder_skips_write(self):
         import tempfile
@@ -215,7 +231,19 @@ class TestConnectionSettingsCallback(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             result = self._cb()(
-                "10.0.0.9", 12345, "m", "b", 90, True, False, True, "em", "eb", None,
+                "10.0.0.9",
+                12345,
+                "m",
+                "b",
+                90,
+                True,
+                False,
+                True,
+                True,
+                "em",
+                "eb",
+                25,
+                None,
             )
             assert result is dash.no_update
             assert not (Path(tmpdir) / ".local-photo-agent").exists()
@@ -235,8 +263,10 @@ class TestConnectionSettingsCallback(unittest.TestCase):
                 False,
                 True,
                 False,
+                False,
                 "all-minilm",
                 "ollama",
+                25,
                 tmpdir,
             )
             settings = json.loads((Path(tmpdir) / ".local-photo-agent" / "settings.json").read_text())

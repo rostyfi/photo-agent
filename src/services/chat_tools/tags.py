@@ -48,6 +48,11 @@ class TagsTool(BaseTool):
         Returns:
             ChatResponse with tags information
         """
+        if not folder_path:
+            return ChatResponse(
+                status="error", response="No folder specified. Please select a folder first.",
+                sender="assistant", model="N/A",
+            )
         try:
             from src.sidecar.database.db import FeaturesDatabase
 
@@ -211,6 +216,11 @@ class TagTool(BaseTool):
         Returns:
             ChatResponse with photos and related tags information
         """
+        if not folder_path:
+            return ChatResponse(
+                status="error", response="No folder specified. Please select a folder first.",
+                sender="assistant", model="N/A",
+            )
         try:
             from src.sidecar.database.db import FeaturesDatabase
 
@@ -246,6 +256,7 @@ class TagTool(BaseTool):
                     response={
                         "text": f"No photos found with tag(s): **{label}**.",
                         "photos": [],
+                        "all_photo_paths": [],
                         "related_tags": [],
                         "selected_tags": tags,
                         "tag": label,
@@ -262,11 +273,17 @@ class TagTool(BaseTool):
             # Format photo results
             photo_lines = []
             photo_data = []
-            for photo in photos[:20]:  # Limit to 20 photos
+            for photo in photos[:20]:  # Limit preview to 20 photos
                 path = photo.get("image_path", "")
                 description = photo.get("description", "No description")
                 photo_lines.append(f"  • **{path}** - {description[:100]}...")
                 photo_data.append({"path": path, "description": description})
+
+            # Full path list for the slideshow/gallery "Start slideshow" button,
+            # so the fullscreen viewer can page through every matching photo
+            # even though the preview gallery only shows 20.
+            all_photo_paths = [photo.get("image_path", "") for photo in photos]
+            all_photo_paths = [p for p in all_photo_paths if p]
 
             label = ", ".join(tags)
             photos_section = f"**Photos with tag(s) '{label}' ({len(photos)} total):**\n\n"
@@ -296,6 +313,7 @@ class TagTool(BaseTool):
                 response={
                     "text": text_response,
                     "photos": photo_data,
+                    "all_photo_paths": all_photo_paths,
                     "related_tags": related_tag_data,
                     "selected_tags": tags,
                     "tag": label,

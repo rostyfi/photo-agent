@@ -915,6 +915,44 @@ class TestTagTool:
         assert res.response["selected_tags"] == ["Sport"]
         assert {p["path"] for p in res.response["photos"]} == {"/photos/a.jpg"}
 
+    def test_tag_tool_all_photo_paths_carries_full_set(self, tmp_path):
+        """``all_photo_paths`` carries every matching path even though the
+        preview ``photos`` list is capped at 20, so the slideshow can page
+        through the full result set."""
+        from src.config import AppConfig
+        from src.services.chat_tools.tags import TagTool
+        from src.sidecar.database import FeaturesDatabase
+
+        config = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            embedding_backend="dry_run",
+            embedding_model="test",
+        )
+
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        for i in range(25):
+            db.save_extraction(
+                f"/photos/{i}.jpg",
+                {"success": True, "parsed": {"description": f"photo {i}", "tags": ["nature"]}},
+            )
+        db.close()
+
+        tool = TagTool(config)
+        res = tool.execute(folder_path=str(tmp_path), args="nature")
+        assert res.status == "success"
+        # Preview capped at 20.
+        assert len(res.response["photos"]) == 20
+        # Full set carried for the slideshow.
+        assert len(res.response["all_photo_paths"]) == 25
+        assert res.response["total_photos"] == 25
+        all_paths = set(res.response["all_photo_paths"])
+        assert all_paths == {f"/photos/{i}.jpg" for i in range(25)}
+        # Every preview path must be in the full set.
+        for p in res.response["photos"]:
+            assert p["path"] in all_paths
+
 
 class TestChatService:
     """Tests for ChatService with dynamic tool loading."""
@@ -1017,6 +1055,36 @@ class TestChatService:
         assert "/tools" in prompt
         assert "/count" in prompt
         assert "/find" in prompt
+
+    def test_system_prompt_includes_think_rule_when_debug_reasoning(self):
+        """RULE 0 (thinking instruction) is present only when debug_reasoning is on."""
+        from src.config import AppConfig
+        from src.services.chat import ChatService
+
+        config_on = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+            debug_reasoning=True,
+        )
+        prompt_on = ChatService(config_on).get_system_prompt()
+        assert "RULE 0" in prompt_on
+        assert "thinking" in prompt_on.lower()
+
+        config_off = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+            debug_reasoning=False,
+        )
+        prompt_off = ChatService(config_off).get_system_prompt()
+        assert "RULE 0" not in prompt_off
 
     def test_chat_service_handle_about(self):
         """Test handling /about command."""
@@ -1144,6 +1212,75 @@ class TestChatService:
         assert response.sender == "assistant"
         assert response.model == "unknown"
         assert response.response_type is None
+        assert response.thinking is None
+
+    def test_process_message_stream_emits_thinking_when_debug_reasoning(self):
+        """ChatService streams 'thinking' events when debug_reasoning is enabled."""
+        from src.config import AppConfig
+        from src.interfaces import ChatStreamChunk
+        from src.services.chat import ChatService
+
+        class FakeChatClient:
+            model = "test-model"
+
+            def chat_stream_events(self, message, system_prompt=None, history=None, think=False):
+                assert think is True
+                yield ChatStreamChunk(kind="thinking", content="reasoning")
+                yield ChatStreamChunk(kind="response", content="answer")
+
+            def chat(self, message, system_prompt=None, history=None, think=False):
+                return "answer"
+
+        config = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+            debug_reasoning=True,
+        )
+        service = ChatService(config, chat_client=FakeChatClient())
+
+        events = list(service.process_message_stream("hello"))
+        types = [e["type"] for e in events]
+        assert "thinking" in types
+        assert "token" in types
+        done = [e for e in events if e["type"] == "done"][0]
+        assert done["thinking"] == "reasoning"
+        assert done["response"] == "answer"
+
+    def test_process_message_stream_no_thinking_when_debug_reasoning_off(self):
+        """No 'thinking' events when debug_reasoning is disabled."""
+        from src.config import AppConfig
+        from src.interfaces import ChatStreamChunk
+        from src.services.chat import ChatService
+
+        class FakeChatClient:
+            model = "test-model"
+
+            def chat_stream_events(self, message, system_prompt=None, history=None, think=False):
+                assert think is False
+                yield ChatStreamChunk(kind="response", content="answer")
+
+            def chat(self, message, system_prompt=None, history=None, think=False):
+                return "answer"
+
+        config = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+            debug_reasoning=False,
+        )
+        service = ChatService(config, chat_client=FakeChatClient())
+
+        events = list(service.process_message_stream("hello"))
+        assert "thinking" not in [e["type"] for e in events]
+        done = [e for e in events if e["type"] == "done"][0]
+        assert done["thinking"] is None
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import logging
 import mimetypes
 import signal
 from pathlib import Path
+from typing import Any
 
 import dash
 import dash_bootstrap_components as dbc
@@ -283,7 +284,7 @@ def create_app(config=None):
 
         suffix = image_path.suffix.lower()
         if suffix in (".heic", ".heif"):
-            content_type = "image/jpeg"
+            content_type: str | None = "image/jpeg"
         else:
             content_type, _ = mimetypes.guess_type(str(image_path))
             if not content_type:
@@ -292,7 +293,7 @@ def create_app(config=None):
         if _PIL_AVAILABLE and size == "thumb":
             max_size = 150
             try:
-                img = Image.open(io.BytesIO(data))
+                img: Any = Image.open(io.BytesIO(data))
                 img.thumbnail((max_size, max_size))
                 buf = io.BytesIO()
                 fmt = img.format

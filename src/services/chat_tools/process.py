@@ -30,6 +30,11 @@ class ProcessTool(BaseTool):
         Returns:
             ChatResponse confirming processing has started
         """
+        if not folder_path:
+            return ChatResponse(
+                status="error", response="No folder specified. Please select a folder first.",
+                sender="assistant", model="N/A",
+            )
         try:
             import logging
 

@@ -73,6 +73,9 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
         if response.response_type:
             api_response["response_type"] = response.response_type
 
+        if response.thinking:
+            api_response["thinking"] = response.thinking
+
         return api_response
 
     except Exception as e:

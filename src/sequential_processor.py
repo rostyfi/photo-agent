@@ -29,6 +29,7 @@ from src.constants import (
     VEC_REQUIRED,
 )
 from src.embeddings import create_generator
+from src.embeddings.base import BaseEmbeddingGenerator
 from src.interfaces import BasePhotoExtractor, ProcessingResult
 from src.sidecar import get_writer
 from src.sidecar.database import FeaturesDatabase
@@ -69,8 +70,8 @@ class SequentialProcessor:
         self._writer = get_writer()
         self.embedding_enabled = embedding_enabled and self.config.embedding_enabled
         self.folder = folder
-        self._embedding_generator = None
-        self._db = None
+        self._embedding_generator: BaseEmbeddingGenerator | None = None
+        self._db: FeaturesDatabase | None = None
         # Serializes all writes to the shared SQLite database (features.db) from
         # concurrent worker threads. Both FeaturesDatabase and the per-folder
         # SimpleProcessingTracker write to the same file, so a single lock guards

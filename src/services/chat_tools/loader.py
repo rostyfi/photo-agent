@@ -94,7 +94,7 @@ def load_all_tools(config: "AppConfig") -> dict[str, "BaseTool"]:
     return tools_map
 
 
-def get_tool(command: str, tools: dict[str, "BaseTool"]) -> "BaseTool":
+def get_tool(command: str, tools: dict[str, "BaseTool"]) -> "BaseTool | None":
     """Get a tool instance by command name.
 
     Args:

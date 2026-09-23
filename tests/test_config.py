@@ -238,6 +238,52 @@ class TestAppConfig(unittest.TestCase):
         self.assertEqual(pc.timeout, 300)
         self.assertEqual(pc.default_prompt, "Test prompt")
 
+    def test_default_slideshow_threshold(self):
+        cfg = AppConfig()
+        self.assertEqual(cfg.slideshow_threshold, 50)
+
+    def test_from_env_slideshow_threshold(self):
+        env = {"LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD": "25"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = AppConfig.from_env()
+            self.assertEqual(cfg.slideshow_threshold, 25)
+
+    def test_from_env_invalid_slideshow_threshold_falls_back(self):
+        env = {"LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD": "not-an-int"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = AppConfig.from_env()
+            self.assertEqual(cfg.slideshow_threshold, 50)
+
+    def test_validate_raises_on_negative_slideshow_threshold(self):
+        cfg = AppConfig(slideshow_threshold=-1)
+        with self.assertRaises(ValueError):
+            cfg.validate()
+
+    def test_validate_allows_zero_slideshow_threshold(self):
+        cfg = AppConfig(slideshow_threshold=0)
+        cfg.validate()
+
+    def test_default_debug_reasoning(self):
+        cfg = AppConfig()
+        self.assertFalse(cfg.debug_reasoning)
+
+    def test_from_env_debug_reasoning_true(self):
+        env = {"LOCAL_PHOTO_AGENT_DEBUG_REASONING": "true"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = AppConfig.from_env()
+            self.assertTrue(cfg.debug_reasoning)
+
+    def test_from_env_debug_reasoning_false(self):
+        env = {"LOCAL_PHOTO_AGENT_DEBUG_REASONING": "false"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = AppConfig.from_env()
+            self.assertFalse(cfg.debug_reasoning)
+
+    def test_to_processing_config_propagates_debug_reasoning(self):
+        cfg = AppConfig(debug_reasoning=True)
+        pc = cfg.to_processing_config()
+        self.assertTrue(pc.debug_reasoning)
+
 
 if __name__ == "__main__":
     unittest.main()

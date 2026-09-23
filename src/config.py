@@ -4,7 +4,12 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from src.constants import DEFAULT_BATCH_CONCURRENCY, DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
+from src.constants import (
+    DEFAULT_BATCH_CONCURRENCY,
+    DEFAULT_LLM_HOST,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_SLIDESHOW_THRESHOLD,
+)
 from src.interfaces import DEFAULT_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -22,6 +27,16 @@ def _safe_int(env_name: str, fallback: int) -> int:
     except (ValueError, TypeError):
         logger.error("Invalid integer value for %s=%r, using fallback %d", env_name, raw, fallback)
         return fallback
+
+
+def _safe_str_or(env_name1: str, env_name2: str, fallback: str) -> str:
+    raw = os.getenv(env_name1)
+    if raw is not None:
+        return raw
+    raw = os.getenv(env_name2)
+    if raw is not None:
+        return raw
+    return fallback
 
 
 def _safe_int_or(env_name1: str, env_name2: str, fallback: int) -> int:
@@ -68,9 +83,12 @@ def _validate_positive(timeout_var: str, timeout: int, label: str):
 
 def _validate_concurrency(conc_var: str, concurrency: int):
     if concurrency < 1:
-        raise ValueError(
-            f"Batch concurrency must be >= 1, got {concurrency} (env var: {conc_var})"
-        )
+        raise ValueError(f"Batch concurrency must be >= 1, got {concurrency} (env var: {conc_var})")
+
+
+def _validate_non_negative(var_name: str, value: int, label: str):
+    if value < 0:
+        raise ValueError(f"{label} must be >= 0, got {value} (env var: {var_name})")
 
 
 @dataclass
@@ -139,6 +157,9 @@ class ProcessingConfig(EmbeddingConfig):
     # Number of images to process in parallel against the LLM backend.
     # 1 = strictly sequential (historical behaviour).
     batch_concurrency: int = DEFAULT_BATCH_CONCURRENCY
+    # When True, chat requests ask the model for its reasoning trace
+    # (Ollama ``think`` parameter) and the web UI displays it. Debug only.
+    debug_reasoning: bool = False
 
     @classmethod
     def from_env(cls) -> "ProcessingConfig":
@@ -159,14 +180,13 @@ class ProcessingConfig(EmbeddingConfig):
         emb = EmbeddingConfig.from_env()
         return cls(
             backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
-            host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST")
-            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            host=_safe_str_or("LOCAL_PHOTO_AGENT_LLM_HOST", "LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
             port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL")
-            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            model=_safe_str_or("LOCAL_PHOTO_AGENT_LLM_MODEL", "LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             timeout=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_TIMEOUT", "LOCAL_PHOTO_AGENT_OLLAMA_TIMEOUT", 600),
             default_prompt=os.getenv("LOCAL_PHOTO_AGENT_DEFAULT_PROMPT", DEFAULT_PROMPT),
             batch_concurrency=_safe_int("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", DEFAULT_BATCH_CONCURRENCY),
+            debug_reasoning=os.getenv("LOCAL_PHOTO_AGENT_DEBUG_REASONING", "false").lower() in ("1", "true", "yes"),
             embedding_enabled=emb.embedding_enabled,
             embedding_model=emb.embedding_model,
             embedding_backend=emb.embedding_backend,
@@ -220,6 +240,13 @@ class AppConfig(EmbeddingConfig):
     # ``container_prefix=host_prefix`` entries. Empty by default, which returns
     # the server-side path as-is (correct when the app runs on the host).
     reveal_map: str = ""
+    # When a chat result yields more than this many photos, the preview gallery
+    # is replaced by a "Start slideshow" button that opens the fullscreen
+    # viewer. 0 disables the slideshow shortcut (always show the gallery).
+    slideshow_threshold: int = DEFAULT_SLIDESHOW_THRESHOLD
+    # When True, chat requests ask the model for its reasoning trace
+    # (Ollama ``think`` parameter) and the web UI displays it. Debug only.
+    debug_reasoning: bool = False
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -244,11 +271,9 @@ class AppConfig(EmbeddingConfig):
         _warn_deprecated("LLM", "OLLAMA")
         emb = EmbeddingConfig.from_env()
         return cls(
-            llm_host=os.getenv("LOCAL_PHOTO_AGENT_LLM_HOST")
-            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
+            llm_host=_safe_str_or("LOCAL_PHOTO_AGENT_LLM_HOST", "LOCAL_PHOTO_AGENT_OLLAMA_HOST", DEFAULT_LLM_HOST),
             llm_port=_safe_int_or("LOCAL_PHOTO_AGENT_LLM_PORT", "LOCAL_PHOTO_AGENT_OLLAMA_PORT", 11434),
-            llm_model=os.getenv("LOCAL_PHOTO_AGENT_LLM_MODEL")
-            or os.getenv("LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
+            llm_model=_safe_str_or("LOCAL_PHOTO_AGENT_LLM_MODEL", "LOCAL_PHOTO_AGENT_OLLAMA_MODEL", DEFAULT_LLM_MODEL),
             llm_backend=os.getenv("LOCAL_PHOTO_AGENT_LLM_BACKEND", "ollama"),
             dash_host=os.getenv("LOCAL_PHOTO_AGENT_DASH_HOST", "127.0.0.1"),
             dash_port=_safe_int("LOCAL_PHOTO_AGENT_DASH_PORT", 8050),
@@ -260,6 +285,8 @@ class AppConfig(EmbeddingConfig):
             recursive=os.getenv("LOCAL_PHOTO_AGENT_RECURSIVE", "true").lower() in ("1", "true", "yes"),
             dry_run=os.getenv("LOCAL_PHOTO_AGENT_DRY_RUN", "false").lower() in ("1", "true", "yes"),
             reveal_map=os.getenv("LOCAL_PHOTO_AGENT_REVEAL_MAP", ""),
+            slideshow_threshold=_safe_int("LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD", DEFAULT_SLIDESHOW_THRESHOLD),
+            debug_reasoning=os.getenv("LOCAL_PHOTO_AGENT_DEBUG_REASONING", "false").lower() in ("1", "true", "yes"),
             embedding_enabled=emb.embedding_enabled,
             embedding_model=emb.embedding_model,
             embedding_backend=emb.embedding_backend,
@@ -278,6 +305,7 @@ class AppConfig(EmbeddingConfig):
         _validate_host("LOCAL_PHOTO_AGENT_DASH_HOST", self.dash_host, "Dash host")
         _validate_port_range("LOCAL_PHOTO_AGENT_DASH_PORT", self.dash_port, "Dash port")
         _validate_concurrency("LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY", self.batch_concurrency)
+        _validate_non_negative("LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD", self.slideshow_threshold, "Slideshow threshold")
         super().validate()
 
     def to_processing_config(self) -> ProcessingConfig:
@@ -290,6 +318,7 @@ class AppConfig(EmbeddingConfig):
             timeout=self.timeout,
             default_prompt=self.default_prompt,
             batch_concurrency=self.batch_concurrency,
+            debug_reasoning=self.debug_reasoning,
             embedding_enabled=self.embedding_enabled,
             embedding_model=self.embedding_model,
             embedding_backend=self.embedding_backend,

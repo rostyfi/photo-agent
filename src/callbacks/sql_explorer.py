@@ -61,7 +61,7 @@ def register_sql_explorer_callback(app):
         if not rows:
             return html.Div("Query returned an empty result set.", className="text-muted")
 
-        return dash_table.DataTable(
+        return dash_table.DataTable(  # type: ignore[attr-defined]
             columns=[{"name": c, "id": c} for c in columns],
             data=[dict(zip(columns, row, strict=False)) for row in rows],
             style_table={"overflowX": "auto"},

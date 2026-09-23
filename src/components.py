@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+from typing import Any
 from urllib.parse import quote
 
 import dash_bootstrap_components as dbc
@@ -38,7 +39,7 @@ def build_detail_modal_content(image_path, folder, metadata, embedding=None, emb
     if not metadata:
         meta = html.Div("Not yet processed", className="text-muted")
     else:
-        rows = []
+        rows: list[Any] = []
         for key in ("description", "subjects", "objects", "colors", "setting", "mood"):
             val = metadata.get(key)
             if val:
@@ -294,7 +295,7 @@ def build_fullscreen_viewer(image_path, folder, metadata, embedding=None, embedd
     preview_url = _preview_url(image_path, folder, size="full") if folder else ""
 
     if not metadata:
-        meta_items = [html.P("Not yet processed", className="text-white mb-0")]
+        meta_items: list[Any] = [html.P("Not yet processed", className="text-white mb-0")]
     else:
         meta_items = []
         for key in ("description", "subjects", "objects", "colors", "setting", "mood"):
@@ -533,7 +534,7 @@ def build_errors_display(errors: list[dict], folder: str) -> html.Div:
     # Sort by timestamp (newest first)
     sorted_errors = sorted(errors, key=lambda x: x.get("ts", ""), reverse=True)
 
-    items = []
+    items: list[Any] = []
     for error in sorted_errors:
         image_path = error.get("image_path", "unknown")
         error_code = error.get("error_code", "unknown")

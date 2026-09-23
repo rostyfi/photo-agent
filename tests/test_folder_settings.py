@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from src.config import AppConfig, ProcessingConfig
 from src.folder_settings import (
     KEY_BATCH_CONCURRENCY,
+    KEY_DEBUG_REASONING,
     KEY_DRY_RUN,
     KEY_EMBEDDING_BACKEND,
     KEY_EMBEDDING_ENABLED,
@@ -16,6 +18,7 @@ from src.folder_settings import (
     KEY_LLM_MODEL,
     KEY_LLM_PORT,
     KEY_RECURSIVE,
+    KEY_SLIDESHOW_THRESHOLD,
     KEY_TIMEOUT,
     apply_folder_settings,
     get_batch_concurrency,
@@ -23,7 +26,6 @@ from src.folder_settings import (
     write_folder_setting,
     write_folder_settings,
 )
-from src.config import AppConfig, ProcessingConfig
 
 
 def test_read_returns_empty_when_missing(tmp_path):
@@ -83,9 +85,7 @@ def test_read_handles_corrupt_file(tmp_path):
 def test_write_overwrites_existing_value(tmp_path):
     write_folder_setting(tmp_path, KEY_BATCH_CONCURRENCY, 2)
     write_folder_setting(tmp_path, KEY_BATCH_CONCURRENCY, 8)
-    assert json.loads((tmp_path / ".local-photo-agent" / "settings.json").read_text()) == {
-        "batch_concurrency": 8
-    }
+    assert json.loads((tmp_path / ".local-photo-agent" / "settings.json").read_text()) == {"batch_concurrency": 8}
 
 
 def test_write_folder_settings_upserts_multiple_keys_atomically(tmp_path):
@@ -133,6 +133,44 @@ def test_apply_folder_settings_overrides_app_config(tmp_path):
     assert config.embedding_model == "all-minilm"
     assert config.embedding_backend == "ollama"
     assert config.batch_concurrency == 4
+
+
+def test_apply_folder_settings_overrides_slideshow_threshold(tmp_path):
+    write_folder_setting(tmp_path, KEY_SLIDESHOW_THRESHOLD, 30)
+    config = AppConfig.from_env()
+    apply_folder_settings(config, tmp_path)
+    assert config.slideshow_threshold == 30
+
+
+def test_apply_folder_settings_skips_invalid_slideshow_threshold(tmp_path):
+    write_folder_setting(tmp_path, KEY_SLIDESHOW_THRESHOLD, "not-a-number")
+    config = AppConfig.from_env()
+    original = config.slideshow_threshold
+    apply_folder_settings(config, tmp_path)
+    assert config.slideshow_threshold == original
+
+
+def test_apply_folder_settings_overrides_debug_reasoning(tmp_path):
+    write_folder_setting(tmp_path, KEY_DEBUG_REASONING, True)
+    config = AppConfig.from_env()
+    assert config.debug_reasoning is False
+    apply_folder_settings(config, tmp_path)
+    assert config.debug_reasoning is True
+
+
+def test_apply_folder_settings_debug_reasoning_string_truthy(tmp_path):
+    write_folder_setting(tmp_path, KEY_DEBUG_REASONING, "yes")
+    config = AppConfig.from_env()
+    apply_folder_settings(config, tmp_path)
+    assert config.debug_reasoning is True
+
+
+def test_apply_folder_settings_skips_invalid_debug_reasoning(tmp_path):
+    write_folder_setting(tmp_path, KEY_DEBUG_REASONING, None)
+    config = AppConfig.from_env()
+    original = config.debug_reasoning
+    apply_folder_settings(config, tmp_path)
+    assert config.debug_reasoning == original
 
 
 def test_apply_folder_settings_overrides_processing_config(tmp_path):

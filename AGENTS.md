@@ -55,6 +55,8 @@ Environment variables (full details in `README.md`):
 | `LOCAL_PHOTO_AGENT_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
 | `LOCAL_PHOTO_AGENT_EMBEDDING_BACKEND` | `ollama` | Embedding backend |
 | `LOCAL_PHOTO_AGENT_REVEAL_MAP` | _(empty)_ | Map server/container path prefixes to host paths for the "Copy Path" feature (`container_prefix=host_prefix`, semicolon/newline-separated) |
+| `LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD` | `50` | When a chat result finds more than this many photos, the preview gallery is replaced by a "Start slideshow" button that opens the fullscreen viewer. `0` always shows the gallery. Also configurable per folder via Settings → Connection → Slideshow threshold |
+| `LOCAL_PHOTO_AGENT_DEBUG_REASONING` | `false` | Enable debug mode: chat requests send Ollama's `think` parameter and the model's reasoning trace is shown in a collapsible "Reasoning trace" block above each chat answer. Also configurable per folder via Settings → Connection → Show reasoning traces |
 
 > **Note:** Legacy `LOCAL_PHOTO_AGENT_OLLAMA_*` variables are deprecated but still supported with warnings.
 

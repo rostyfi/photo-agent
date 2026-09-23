@@ -131,37 +131,38 @@ def register_copy_error_callback(app):
             const triggered = dash_clientside.callback_context.triggered || [];
             if (triggered.length === 0) { return window.dash_clientside.no_update; }
 
-            const propId = triggered[0].prop_id;
+            // Only act on a real click, not a spurious rebuild (e.g. when the
+            // poll interval re-renders the error list and re-creates buttons).
+            const trig = triggered[0];
+            if (!trig.value) { return window.dash_clientside.no_update; }
+
+            const propId = trig.prop_id;
             // Extract the index from the button ID like "{'type':'btn-copy-error','index':2}.n_clicks"
             const match = propId.match(/index":(\\d+)/);
             if (!match) { return window.dash_clientside.no_update; }
 
             const index = parseInt(match[1]);
-            const errors = data.errors || [];
+            const errors = (data && data.errors) || [];
 
             if (index < errors.length) {
                 const errorMsg = errors[index].error_msg || "";
-                // Copy to clipboard
-                navigator.clipboard.writeText(errorMsg).then(function() {
-                    console.log("Copied error to clipboard");
-                }).catch(function(err) {
-                    console.error("Failed to copy:", err);
-                    // Fallback: try to select the text
-                    const spanId = '{"type":"error-msg","index":' + index + '}';
-                    const span = document.querySelector('[id="' + spanId.replace(/\"/g, '\\\\"') + '"]');
-                    if (span) {
-                        const range = document.createRange();
-                        range.selectNode(span);
-                        window.getSelection().removeAllRanges();
-                        window.getSelection().addRange(range);
-                        try {
-                            document.execCommand('copy');
-                        } catch(e) {
-                            console.error("Fallback copy failed:", e);
-                        }
-                        window.getSelection().removeAllRanges();
+                // Copy to clipboard. navigator.clipboard may be undefined when
+                // the browser blocks clipboard access (e.g. tracking prevention
+                // or a non-secure context), so guard and fall back to a textarea.
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(errorMsg).catch(function(err) {
+                        console.error("Failed to copy:", err);
+                    });
+                } else {
+                    var ta = document.createElement('textarea');
+                    ta.value = errorMsg;
+                    ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); } catch(e) {
+                        console.error("Fallback copy failed:", e);
                     }
-                });
+                    document.body.removeChild(ta);
+                }
             }
 
             return window.dash_clientside.no_update;

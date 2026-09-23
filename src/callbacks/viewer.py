@@ -5,10 +5,30 @@ import dash
 from dash import Input, Output, State, callback_context
 
 from src.components import build_detail_modal_content
+from src.constants import SORT_ORDER_ASC, SORT_ORDER_DESC, default_order_for
 
-from .common import _db_session, _get_app_config, _open_fullscreen_content, _open_modal
+from .common import (
+    _db_session,
+    _get_app_config,
+    _open_fullscreen_content,
+    _open_modal,
+    sort_paths,
+)
 
 logger = logging.getLogger(__name__)
+
+# Arrow glyphs for the fullscreen order toggle. ``\u25b2`` up (ascending),
+# ``\u25bc`` down (descending).
+_ORDER_ARROW = {SORT_ORDER_ASC: "\u25b2", SORT_ORDER_DESC: "\u25bc"}
+
+
+def _order_from_label(children) -> str | None:
+    """Infer the order (``asc``/``desc``) from a toggle button label, else None."""
+    glyph = children if isinstance(children, str) else ""
+    for order, arrow in _ORDER_ARROW.items():
+        if glyph == arrow:
+            return order
+    return None
 
 
 def register_detail_modal_callback(app):
@@ -105,31 +125,220 @@ def register_detail_modal_callback(app):
 
 
 def register_fullscreen_open_callback(app):
-    """Open the fullscreen viewer from the detail modal's Fullscreen button."""
+    """Open the fullscreen viewer from the detail modal's Fullscreen button.
+
+    The photo list is re-ordered according to the fullscreen sort dropdown,
+    keeping the currently displayed image in view at its new position.
+    """
 
     @app.callback(
         Output("fullscreen-modal", "is_open"),
         Output("fullscreen-modal-body", "children"),
         Output("detail-modal", "is_open", allow_duplicate=True),
+        Output("photo-list-store", "data", allow_duplicate=True),
         Input("btn-open-fullscreen", "n_clicks"),
         State("photo-list-store", "data"),
         State("detail-modal", "is_open"),
         State("input-folder", "value"),
+        State("fullscreen-sort-select", "value"),
+        State("fullscreen-sort-order", "children"),
         prevent_initial_call=True,
     )
-    def open_fullscreen(n_clicks, store_data, detail_is_open, folder):
+    def open_fullscreen(n_clicks, store_data, detail_is_open, folder, sort_key, order_label):
         if not n_clicks or not folder:
-            return dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
         paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
         current_index = store_data.get("index") if isinstance(store_data, dict) else None
+        original_paths = (
+            store_data.get("original_paths") if isinstance(store_data, dict) else None
+        ) or paths
 
         if current_index is None or current_index >= len(paths):
-            return dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
-        image_path = paths[current_index]
-        content, _ = _open_fullscreen_content(image_path, folder, current_index, paths)
-        return True, content, False
+        order = _order_from_label(order_label)
+        current_image = paths[current_index]
+        sorted_paths = sort_paths(
+            original_paths, sort_key, folder, original_paths=original_paths, order=order
+        )
+        try:
+            new_index = sorted_paths.index(current_image)
+        except ValueError:
+            new_index = 0
+            sorted_paths = [current_image, *sorted_paths]
+
+        content, store = _open_fullscreen_content(
+            sorted_paths[new_index], folder, new_index, sorted_paths, original_paths=original_paths
+        )
+        return True, content, False, store
+
+
+def _extract_paths_and_scores(entry):
+    """Return ``(paths, scores)`` from a chat history entry.
+
+    ``scores`` is a ``{path: score}`` dict for entries whose items carry a
+    ``score`` (``/find`` results); otherwise it is an empty dict.
+
+    ``all_photo_paths`` (a flat list of image paths, used by the ``/tag`` tool
+    to carry every matching photo regardless of the 20-photo preview cap) is
+    preferred over ``photo_paths``/``photos`` so the slideshow can page through
+    the full result set.
+    """
+    all_paths = entry.get("all_photo_paths")
+    if all_paths:
+        paths = []
+        for path in all_paths:
+            if isinstance(path, bytes):
+                try:
+                    path = path.decode("utf-8")
+                except (UnicodeDecodeError, AttributeError):
+                    path = path.decode("latin-1", errors="replace")
+            elif not isinstance(path, str):
+                path = str(path)
+            if path:
+                paths.append(path)
+        return paths, {}
+
+    raw = entry.get("photo_paths") or entry.get("photos", []) or []
+    paths = []
+    scores = {}
+    for item in raw:
+        if isinstance(item, dict):
+            path = item.get("path", "")
+            score = item.get("score")
+        else:
+            path = item
+            score = None
+        if isinstance(path, bytes):
+            try:
+                path = path.decode("utf-8")
+            except (UnicodeDecodeError, AttributeError):
+                path = path.decode("latin-1", errors="replace")
+        elif not isinstance(path, str):
+            path = str(path)
+        if not path:
+            continue
+        paths.append(path)
+        if score is not None:
+            scores[path] = score
+    return paths, scores
+
+
+def register_slideshow_open_callback(app):
+    """Open the fullscreen viewer from a chat \u201cStart slideshow\u201d button.
+
+    When a chat result exceeds the slideshow threshold, the gallery is
+    replaced by a ``btn-start-slideshow`` button (plus a ``slideshow-sort``
+    dropdown) keyed by the chat history index. Below the threshold the gallery
+    is shown with its own ``gallery-sort`` dropdown and a ``btn-start-slideshow``
+    button in the same sort row. Clicking either button loads that history
+    entry's photo paths into ``photo-list-store`` (starting at the first photo)
+    and opens the same fullscreen viewer used by the detail modal's Fullscreen
+    button. The paths are ordered according to the sort dropdown next to the
+    clicked button (``slideshow-sort`` or, falling back, ``gallery-sort``).
+    """
+
+    @app.callback(
+        Output("fullscreen-modal", "is_open", allow_duplicate=True),
+        Output("fullscreen-modal-body", "children", allow_duplicate=True),
+        Output("photo-list-store", "data", allow_duplicate=True),
+        Output("fullscreen-sort-select", "value", allow_duplicate=True),
+        Output("fullscreen-sort-order", "children", allow_duplicate=True),
+        Input({"type": "btn-start-slideshow", "index": dash.ALL}, "n_clicks"),
+        State("chat-history-store", "data"),
+        State("input-folder", "value"),
+        State({"type": "slideshow-sort", "index": dash.ALL}, "value"),
+        State({"type": "slideshow-sort", "index": dash.ALL}, "id"),
+        State({"type": "gallery-sort", "index": dash.ALL}, "value"),
+        State({"type": "gallery-sort", "index": dash.ALL}, "id"),
+        State({"type": "sort-order", "index": dash.ALL}, "id"),
+        State({"type": "sort-order", "index": dash.ALL}, "children"),
+        prevent_initial_call=True,
+    )
+    def open_slideshow(
+        n_clicks_list,
+        chat_history,
+        folder,
+        sort_values,
+        sort_ids,
+        gallery_values,
+        gallery_ids,
+        order_ids,
+        order_labels,
+    ):
+        ctx = callback_context
+        if not ctx.triggered or not n_clicks_list:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        # Identify the exact button that was clicked from the triggered
+        # prop_id (robust against stale n_clicks on sibling buttons).
+        triggered_id = ""
+        for t in ctx.triggered:
+            pid = t.get("prop_id", "")
+            if pid and pid != "." and t.get("value"):
+                triggered_id = pid
+                break
+        if not triggered_id:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        try:
+            id_part = triggered_id.rsplit(".", 1)[0]
+            btn_id = json.loads(id_part)
+            hist_idx = btn_id.get("index")
+        except (json.JSONDecodeError, ValueError, AttributeError):
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        if not isinstance(chat_history, list) or hist_idx is None:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        if hist_idx < 0 or hist_idx >= len(chat_history):
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        # Read the sort dropdown value matching the clicked button's index.
+        # ``slideshow-sort`` is used by the above-threshold slideshow button;
+        # ``gallery-sort`` by the below-threshold gallery's "Start slideshow"
+        # button. Fall back to ``gallery-sort`` when no ``slideshow-sort``
+        # dropdown matches (i.e. the button was rendered in a gallery).
+        sort_key = None
+        for pos, sid in enumerate(sort_ids or []):
+            if sid.get("index") == hist_idx:
+                sort_key = sort_values[pos] if pos < len(sort_values) else None
+                break
+        if sort_key is None:
+            for pos, gid in enumerate(gallery_ids or []):
+                if gid.get("index") == hist_idx:
+                    sort_key = gallery_values[pos] if pos < len(gallery_values) else None
+                    break
+
+        # Read the matching order toggle direction.
+        order = None
+        for pos, oid in enumerate(order_ids or []):
+            if oid.get("index") == hist_idx:
+                order = _order_from_label(order_labels[pos] if pos < len(order_labels) else None)
+                break
+
+        entry = chat_history[hist_idx] or {}
+        original_paths, scores = _extract_paths_and_scores(entry)
+        if not original_paths or not folder:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        sorted_paths = sort_paths(
+            original_paths,
+            sort_key,
+            folder,
+            original_paths=original_paths,
+            scores=scores or None,
+            order=order,
+        )
+        content, store = _open_fullscreen_content(
+            sorted_paths[0], folder, 0, sorted_paths, original_paths=original_paths
+        )
+        # Sync the fullscreen controls to the chosen sort and order.
+        from src.constants import DEFAULT_SORT_KEY, default_order_for
+
+        sync_sort = sort_key or DEFAULT_SORT_KEY
+        sync_order = order or default_order_for(sort_key)
+        return True, content, store, sync_sort, _ORDER_ARROW.get(sync_order, _ORDER_ARROW["asc"])
 
 
 def register_fullscreen_nav_callback(app):
@@ -160,6 +369,9 @@ def register_fullscreen_nav_callback(app):
 
         paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
         current_index = store_data.get("index") if isinstance(store_data, dict) else None
+        original_paths = (
+            store_data.get("original_paths") if isinstance(store_data, dict) else None
+        ) or paths
 
         if current_index is None or not paths:
             return dash.no_update, dash.no_update
@@ -172,8 +384,87 @@ def register_fullscreen_nav_callback(app):
             return dash.no_update, dash.no_update
 
         image_path = paths[new_index]
-        content, store = _open_fullscreen_content(image_path, folder, new_index, paths)
+        content, store = _open_fullscreen_content(
+            image_path, folder, new_index, paths, original_paths=original_paths
+        )
         return content, store
+
+
+def register_fullscreen_sort_callback(app):
+    """Re-sort the fullscreen viewer when its sort dropdown or order toggle changes.
+
+    Re-orders from the stored ``original_paths`` (the search-result order)
+    and keeps the currently displayed image in view at its new position.
+    Switching the sort key resets the order to that key's natural default;
+    clicking the order toggle flips asc/desc.
+    """
+
+    @app.callback(
+        Output("fullscreen-modal-body", "children", allow_duplicate=True),
+        Output("photo-list-store", "data", allow_duplicate=True),
+        Output("fullscreen-sort-order", "children", allow_duplicate=True),
+        Input("fullscreen-sort-select", "value"),
+        Input("fullscreen-sort-order", "n_clicks"),
+        State("photo-list-store", "data"),
+        State("input-folder", "value"),
+        State("fullscreen-sort-order", "children"),
+        prevent_initial_call=True,
+    )
+    def sort_fullscreen(sort_key, _order_clicks, store_data, folder, order_label):
+        if not isinstance(store_data, dict):
+            return dash.no_update, dash.no_update, dash.no_update
+
+        paths = store_data.get("paths", []) or []
+        original_paths = store_data.get("original_paths") or paths
+        current_index = store_data.get("index")
+
+        if not paths or not folder:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        ctx = callback_context
+        _triggered_prop = ctx.triggered[0].get("prop_id", "") if ctx.triggered else ""
+        triggered_by_order = _triggered_prop.startswith("fullscreen-sort-order.")
+
+        if triggered_by_order:
+            current = _order_from_label(order_label) or SORT_ORDER_ASC
+            order = SORT_ORDER_DESC if current == SORT_ORDER_ASC else SORT_ORDER_ASC
+        else:
+            order = default_order_for(sort_key)
+
+        current_image = paths[current_index] if current_index is not None and current_index < len(paths) else None
+        sorted_paths = sort_paths(
+            original_paths, sort_key, folder, original_paths=original_paths, order=order
+        )
+
+        if current_image and current_image in sorted_paths:
+            new_index = sorted_paths.index(current_image)
+        else:
+            new_index = 0
+
+        content, store = _open_fullscreen_content(
+            sorted_paths[new_index], folder, new_index, sorted_paths, original_paths=original_paths
+        )
+        new_label = _ORDER_ARROW.get(order, _ORDER_ARROW[SORT_ORDER_ASC])
+        return content, store, new_label
+
+
+def register_fullscreen_sort_visibility_callback(app):
+    """Show the fullscreen sort control only when browsing multiple photos."""
+
+    @app.callback(
+        Output("fullscreen-sort-container", "style", allow_duplicate=True),
+        Input("photo-list-store", "data"),
+        State("fullscreen-sort-container", "style"),
+        prevent_initial_call=True,
+    )
+    def toggle_sort_visibility(store_data, current_style):
+        paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
+        visible = len(paths) > 1
+        # Merge into the existing style so positioning/zIndex/background are
+        # preserved; only the display property is toggled.
+        new_style = dict(current_style) if current_style else {}
+        new_style["display"] = "flex" if visible else "none"
+        return new_style
 
 
 def register_fullscreen_close_callback(app):

@@ -3,6 +3,7 @@
 import io
 import os
 from pathlib import Path
+from typing import Any
 
 try:
     from PIL import Image
@@ -82,7 +83,7 @@ def convert_heic_to_jpeg_bytes(image_path: str | Path, quality: int | None = Non
         rgb_img = img.convert("RGB")
         buffer = io.BytesIO()
 
-        save_kwargs = {"format": "JPEG", "quality": quality}
+        save_kwargs: dict[str, Any] = {"format": "JPEG", "quality": quality}
         if exif:
             save_kwargs["exif"] = exif
         if icc_profile:

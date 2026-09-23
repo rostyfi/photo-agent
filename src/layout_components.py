@@ -9,7 +9,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from src.config import AppConfig
-from src.constants import DEFAULT_LLM_MODEL
+from src.constants import DEFAULT_LLM_MODEL, DEFAULT_SORT_KEY, SORT_OPTIONS, default_order_for
 
 # =============================================================================
 # STYLE CONSTANTS
@@ -173,6 +173,31 @@ def build_connection_tab(app_config: AppConfig):
                 [
                     dbc.Col(
                         [
+                            dbc.Label("Slideshow threshold"),
+                            dbc.Input(
+                                id="input-slideshow-threshold",
+                                type="number",
+                                value=app_config.slideshow_threshold,
+                                min=0,
+                                step=1,
+                                className=INPUT_STYLE,
+                            ),
+                            dbc.FormText(
+                                "When a chat result finds more than this many photos, the "
+                                "preview gallery is replaced by a \u201cStart slideshow\u201d button "
+                                "that opens the fullscreen viewer. 0 always shows the gallery.",
+                                className="text-muted small",
+                            ),
+                        ],
+                        width=12,
+                        className=MB_2,
+                    ),
+                ]
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
                             dbc.Label("\u00a0"),
                             dbc.Button(
                                 "Check Server",
@@ -205,6 +230,20 @@ def build_connection_tab(app_config: AppConfig):
                             className=MB_2,
                         ),
                         width=6,
+                    ),
+                ],
+                className=MB_2,
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Checkbox(
+                            id="chk-debug-reasoning",
+                            label="Show reasoning traces (debug mode)",
+                            value=app_config.debug_reasoning,
+                            className=MB_2,
+                        ),
+                        width=12,
                     ),
                 ],
                 className=MB_2,
@@ -678,6 +717,50 @@ def build_fullscreen_modal():
                     style={
                         "height": "100%",
                         "width": "100%",
+                    },
+                ),
+                html.Div(
+                    [
+                        html.Span(
+                            "Sort:",
+                            style={
+                                "color": "white",
+                                "fontSize": "0.9rem",
+                                "marginRight": "8px",
+                            },
+                        ),
+                        dcc.Dropdown(
+                            id="fullscreen-sort-select",
+                            options=SORT_OPTIONS,
+                            value=DEFAULT_SORT_KEY,
+                            clearable=False,
+                            style={"width": "170px"},
+                            className="sort-dropdown",
+                        ),
+                        dbc.Button(
+                            "\u25bc" if default_order_for(DEFAULT_SORT_KEY) == "desc" else "\u25b2",
+                            id="fullscreen-sort-order",
+                            color="secondary",
+                            size="sm",
+                            n_clicks=0,
+                            style={
+                                "width": "38px",
+                                "padding": "0.25rem 0",
+                                "marginLeft": "6px",
+                            },
+                        ),
+                    ],
+                    id="fullscreen-sort-container",
+                    style={
+                        "position": "absolute",
+                        "top": "20px",
+                        "left": "20px",
+                        "zIndex": "1100",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "background": "rgba(0,0,0,0.5)",
+                        "borderRadius": "8px",
+                        "padding": "6px 10px",
                     },
                 ),
                 dbc.Button(

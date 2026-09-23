@@ -44,6 +44,7 @@ class TestLayout(unittest.TestCase):
             "input-backend",
             "input-timeout",
             "input-concurrency",
+            "input-slideshow-threshold",
             "btn-health",
             "input-folder",
             "chk-recursive",

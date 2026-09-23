@@ -13,6 +13,7 @@ from .chat import (
     register_chat_tag_click_callback,
     register_chat_tag_remove_callback,
     register_clear_chat_callback,
+    register_gallery_sort_callback,
 )
 from .errors import register_all_errors_callbacks
 from .health_settings import (
@@ -42,7 +43,10 @@ from .viewer import (
     register_fullscreen_metadata_toggle_callback,
     register_fullscreen_nav_callback,
     register_fullscreen_open_callback,
+    register_fullscreen_sort_callback,
+    register_fullscreen_sort_visibility_callback,
     register_reveal_callbacks,
+    register_slideshow_open_callback,
 )
 
 __all__ = [
@@ -70,11 +74,15 @@ __all__ = [
     "register_fullscreen_metadata_toggle_callback",
     "register_fullscreen_nav_callback",
     "register_fullscreen_open_callback",
+    "register_fullscreen_sort_callback",
+    "register_fullscreen_sort_visibility_callback",
+    "register_gallery_sort_callback",
     "register_health_callback",
     "register_metadata_tester_callbacks",
     "register_prompt_tester_callbacks",
     "register_reveal_callbacks",
     "register_similarity_search_callback",
+    "register_slideshow_open_callback",
     "register_sql_explorer_callback",
     "register_store_vector_callback",
     "register_vector_db_check_callback",
@@ -111,12 +119,18 @@ def register_callbacks(app, create_extractor_fn, processing_config, app_config: 
     register_sql_explorer_callback(app)
     register_detail_modal_callback(app)
     register_fullscreen_open_callback(app)
+    register_slideshow_open_callback(app)
     register_fullscreen_nav_callback(app)
+    register_fullscreen_sort_callback(app)
+    register_fullscreen_sort_visibility_callback(app)
     register_fullscreen_close_callback(app)
     register_fullscreen_metadata_toggle_callback(app)
     register_fullscreen_folder_change_callback(app)
     register_fullscreen_find_similar_callback(app)
     register_reveal_callbacks(app)
+
+    # Gallery sort control
+    register_gallery_sort_callback(app)
 
     # Similarity search callbacks
     register_find_similar_callback(app)

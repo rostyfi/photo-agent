@@ -50,7 +50,7 @@ class SimpleProcessingTracker:
         self.folder = Path(folder).absolute()
         self._db_path = self._get_db_path()
         self._schema_ensured = False  # Track if schema has been ensured
-        self._connection = None  # Cached connection
+        self._connection: sqlite3.Connection | None = None  # Cached connection
 
     def _get_db_path(self) -> Path:
         """Get the database path for this folder."""
@@ -98,7 +98,7 @@ class SimpleProcessingTracker:
 
         conn = self._get_connection()
         try:
-            processed = set()
+            processed: set[str] = set()
 
             # Get from processing_tracker table
             cursor = conn.execute(f"SELECT image_path FROM {TABLE_PROCESSING_TRACKER}")
@@ -171,7 +171,7 @@ class SimpleProcessingTracker:
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
 
-            clear_processed_cache(self.folder)
+            clear_processed_cache(str(self.folder))
         except Exception as e:
             logger.error("Failed to mark %s as completed: %s", image_path, e)
             raise
@@ -204,7 +204,7 @@ class SimpleProcessingTracker:
             # Invalidate the processed set cache so new queries get fresh data
             from src.discovery import clear_processed_cache
 
-            clear_processed_cache(self.folder)
+            clear_processed_cache(str(self.folder))
         except Exception as e:
             logger.error("Failed to mark %s as failed: %s", image_path, e)
             raise

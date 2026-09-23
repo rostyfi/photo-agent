@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
+from typing import NamedTuple
 
 # Import constants for default values
 from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL
@@ -152,6 +153,7 @@ class LLMChatClient(ABC):
         message: str,
         system_prompt: str | None = None,
         history: list | None = None,
+        think: bool = False,
     ) -> str:
         """Send a chat message to the LLM and return the response.
 
@@ -159,6 +161,10 @@ class LLMChatClient(ABC):
             message: The user message/prompt.
             system_prompt: Optional system prompt to guide the LLM.
             history: Optional chat history for conversation context.
+            think: When True, request the model's reasoning trace in addition
+                to the answer. Backends that support it surface the trace via
+                :meth:`chat_stream_events` or :meth:`chat_with_thinking`; this
+                method returns only the answer text.
 
         Returns:
             The LLM's response text.
@@ -168,11 +174,36 @@ class LLMChatClient(ABC):
         """
         ...
 
+    def chat_with_thinking(
+        self,
+        message: str,
+        system_prompt: str | None = None,
+        history: list | None = None,
+        think: bool = False,
+    ) -> tuple[str, str | None]:
+        """Send a chat message and return the answer plus optional reasoning trace.
+
+        Default implementation delegates to :meth:`chat` and reports no
+        thinking content. Backends that support reasoning traces (``think``)
+        override this to return ``(response, thinking)``.
+
+        Args:
+            message: The user message/prompt.
+            system_prompt: Optional system prompt to guide the LLM.
+            history: Optional chat history for conversation context.
+            think: When True, request the model's reasoning trace.
+
+        Returns:
+            A ``(response_text, thinking_text_or_None)`` tuple.
+        """
+        return self.chat(message, system_prompt=system_prompt, history=history, think=think), None
+
     def chat_stream(
         self,
         message: str,
         system_prompt: str | None = None,
         history: list | None = None,
+        think: bool = False,
     ) -> Generator[str, None, None]:
         """Stream a chat response from the LLM, yielding incremental text chunks.
 
@@ -180,15 +211,47 @@ class LLMChatClient(ABC):
         to ``chat`` and yields the full response as a single chunk. Subclasses
         that support native streaming should override this.
 
+        When ``think`` is True, backends that support reasoning traces should
+        prefer overriding :meth:`chat_stream_events` so the reasoning is
+        surfaced separately from the answer.
+
         Args:
             message: The user message/prompt.
             system_prompt: Optional system prompt to guide the LLM.
             history: Optional chat history for conversation context.
+            think: When True, request the model's reasoning trace.
 
         Yields:
             Incremental response text chunks from the LLM.
         """
-        yield self.chat(message, system_prompt=system_prompt, history=history)
+        yield self.chat(message, system_prompt=system_prompt, history=history, think=think)
+
+    def chat_stream_events(
+        self,
+        message: str,
+        system_prompt: str | None = None,
+        history: list | None = None,
+        think: bool = False,
+    ) -> Generator["ChatStreamChunk", None, None]:
+        """Stream a chat response as typed chunks, separating reasoning from the answer.
+
+        Yields :class:`ChatStreamChunk` instances whose ``kind`` is either
+        ``"thinking"`` (the model's reasoning trace) or ``"response"`` (the
+        final answer). The default implementation wraps :meth:`chat_stream`
+        as ``"response"`` chunks, so backends without reasoning support work
+        unchanged; backends that support ``think`` override this.
+
+        Args:
+            message: The user message/prompt.
+            system_prompt: Optional system prompt to guide the LLM.
+            history: Optional chat history for conversation context.
+            think: When True, request the model's reasoning trace.
+
+        Yields:
+            :class:`ChatStreamChunk` instances.
+        """
+        for chunk in self.chat_stream(message, system_prompt=system_prompt, history=history, think=think):
+            yield ChatStreamChunk(kind="response", content=chunk)
 
     @abstractmethod
     def health_check(self) -> bool:
@@ -196,10 +259,25 @@ class LLMChatClient(ABC):
         ...
 
 
+class ChatStreamChunk(NamedTuple):
+    """A single streamed chunk from a chat client.
+
+    Attributes:
+        kind: ``"response"`` for final-answer text, ``"thinking"`` for the
+            model's reasoning trace (only emitted when ``think`` is requested
+            and the backend supports it).
+        content: The incremental text for this chunk.
+    """
+
+    kind: str
+    content: str
+
+
 # Public API exports
 __all__ = [
     "DEFAULT_PROMPT",
     "BasePhotoExtractor",
+    "ChatStreamChunk",
     "ErrorCode",
     "LLMChatClient",
     "ProcessingResult",

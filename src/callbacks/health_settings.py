@@ -12,6 +12,7 @@ Vector search operations use the unified availability check.
 """
 
 import logging
+from typing import Any
 
 import dash
 import dash_bootstrap_components as dbc
@@ -147,9 +148,11 @@ def register_connection_settings_callback(app, app_config):
         Input("input-timeout", "value"),
         Input("chk-recursive", "value"),
         Input("chk-dry-run", "value"),
+        Input("chk-debug-reasoning", "value"),
         Input("chk-embedding-enabled", "value"),
         Input("input-embedding-model", "value"),
         Input("input-embedding-backend", "value"),
+        Input("input-slideshow-threshold", "value"),
         State("input-folder", "value"),
         prevent_initial_call=True,
     )
@@ -161,15 +164,18 @@ def register_connection_settings_callback(app, app_config):
         timeout,
         recursive,
         dry_run,
+        debug_reasoning,
         embedding_enabled,
         embedding_model,
         embedding_backend,
+        slideshow_threshold,
         folder,
     ):
         if not folder or not str(folder).strip():
             return dash.no_update
 
         from src.folder_settings import (
+            KEY_DEBUG_REASONING,
             KEY_DRY_RUN,
             KEY_EMBEDDING_BACKEND,
             KEY_EMBEDDING_ENABLED,
@@ -179,10 +185,22 @@ def register_connection_settings_callback(app, app_config):
             KEY_LLM_MODEL,
             KEY_LLM_PORT,
             KEY_RECURSIVE,
+            KEY_SLIDESHOW_THRESHOLD,
             KEY_TIMEOUT,
             _apply_settings_dict,
             write_folder_settings,
         )
+
+        # Coerce the slideshow threshold to a non-negative int when present
+        # so we never persist a blank or negative form value.
+        slideshow_threshold_value = None
+        if slideshow_threshold is not None:
+            try:
+                coerced = int(slideshow_threshold)
+                if coerced >= 0:
+                    slideshow_threshold_value = coerced
+            except (TypeError, ValueError):
+                slideshow_threshold_value = None
 
         raw = {
             KEY_LLM_HOST: host,
@@ -192,17 +210,15 @@ def register_connection_settings_callback(app, app_config):
             KEY_TIMEOUT: timeout,
             KEY_RECURSIVE: recursive,
             KEY_DRY_RUN: dry_run,
+            KEY_DEBUG_REASONING: debug_reasoning,
             KEY_EMBEDDING_ENABLED: embedding_enabled,
             KEY_EMBEDDING_MODEL: embedding_model,
             KEY_EMBEDDING_BACKEND: embedding_backend,
+            KEY_SLIDESHOW_THRESHOLD: slideshow_threshold_value,
         }
         # Drop empty/None values so we never clobber a saved value with a
         # blank form field (e.g. while the user is mid-typing).
-        updates = {
-            k: v
-            for k, v in raw.items()
-            if v is not None and not (isinstance(v, str) and not v.strip())
-        }
+        updates = {k: v for k, v in raw.items() if v is not None and not (isinstance(v, str) and not v.strip())}
         if updates:
             try:
                 write_folder_settings(str(folder).strip(), updates)
@@ -384,6 +400,20 @@ def register_vector_test_callback(app, app_config):
                     )
 
             # Success! Now test the database by storing and retrieving the vector
+            if test_vector is None:
+                return (
+                    dbc.Alert(
+                        [
+                            html.Strong("⚠️ Embedding Generation Failed: "),
+                            html.Span("No vector returned from embedding server."),
+                        ],
+                        color="warning",
+                        dismissable=True,
+                    ),
+                    dash.no_update,
+                    use_embedding_model,
+                )
+
             vector_length = len(test_vector)
             vector_preview = ", ".join(f"{v:.6f}" for v in test_vector[:10])
 
@@ -740,7 +770,12 @@ def register_embedding_status_indicator_callback(app, app_config):
 
         # Create a temporary config for checking
         class TempConfig:
-            pass
+            llm_host: str
+            llm_port: int
+            llm_backend: str
+            embedding_enabled: bool
+            embedding_model: str
+            embedding_backend: str
 
         temp_config = TempConfig()
         temp_config.llm_host = use_host
@@ -795,11 +830,17 @@ def register_embedding_status_indicator_callback(app, app_config):
             const spans = document.querySelectorAll('#embedding-status-indicator .selectable-text');
             if (spans.length > 0) {
                 const text = Array.from(spans).map(s => s.textContent).join(' ');
-                navigator.clipboard.writeText(text).then(function() {
-                    console.log("Copied embedding status to clipboard");
-                }).catch(function(err) {
-                    console.error("Failed to copy:", err);
-                });
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).catch(function(err) {
+                        console.error("Failed to copy:", err);
+                    });
+                } else {
+                    var ta = document.createElement('textarea');
+                    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); } catch(e) { console.error("Fallback copy failed:", e); }
+                    document.body.removeChild(ta);
+                }
             }
             return window.dash_clientside.no_update;
         }
@@ -875,11 +916,17 @@ def register_vector_search_status_callback(app):
             }
             const msg = document.getElementById('vector-status-msg');
             if (msg) {
-                navigator.clipboard.writeText(msg.textContent).then(function() {
-                    console.log("Copied vector status to clipboard");
-                }).catch(function(err) {
-                    console.error("Failed to copy:", err);
-                });
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(msg.textContent).catch(function(err) {
+                        console.error("Failed to copy:", err);
+                    });
+                } else {
+                    var ta = document.createElement('textarea');
+                    ta.value = msg.textContent; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); } catch(e) { console.error("Fallback copy failed:", e); }
+                    document.body.removeChild(ta);
+                }
             }
             return window.dash_clientside.no_update;
         }
@@ -956,7 +1003,7 @@ def register_vector_db_check_callback(app):
                         if len(vector) > 5:
                             vector_preview += f", ... ({len(vector)} total)"
                         full_vector_str = ", ".join(f"{v:.6f}" for v in vector)
-                        vector_details = html.Div(
+                        vector_details: Any = html.Div(
                             [
                                 html.Small("Vector: ", className="text-muted"),
                                 html.Pre(

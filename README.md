@@ -31,11 +31,14 @@ As this application was intended to be used by non-technical people the designin
 - **Metadata extraction** — automatic EXIF, IPTC, and XMP metadata extraction from images
 - **Visual thumbnail previews** in the web UI — chat results render as clickable image thumbnails; click any thumbnail to open a detail modal with a larger preview and extracted metadata.
 - **Fullscreen photo viewer** — from the detail modal, open a full-viewport viewer with navigation arrows, keyboard controls, and a toggleable metadata overlay for high-resolution browsing.
+- **Slideshow for large results** — when a chat search returns more than a configurable number of photos (default 50), the preview gallery is replaced by a **Start slideshow** button that opens the same fullscreen viewer used by the detail modal, seeded with the full result set so you can browse every match with the arrow keys.
+- **Sortable results** — reorder any preview gallery or slideshow by Relevance, Date taken (EXIF), Date (file modified), or Name from a Sort dropdown, with an adjacent toggle to flip ascending/descending direction; the photo you're viewing stays in place when you change the order.
 - **Web-based UI via Dash** centered on a chat interface
 - **Full-text search (FTS5)** over extracted descriptions, subjects, tags, and more, driven from the chat interface
 - **Vector embedding support** — generate vector embeddings for images using Ollama's `/api/embeddings` endpoint and find visually similar photos using cosine similarity with sqlite-vec
 - **Find Similar** — click "Find Similar" in the detail modal or fullscreen viewer to discover visually similar images in your collection
 - **Chat with Ollama** — interact directly with your Ollama LLM via the web UI chat; use `/about`, `/tools`, `/find`, `/count`, `/scan`, `/process`, `/status` to drive the agent
+- **Reasoning traces (debug mode)** — enable **Settings → Connection → Show reasoning traces** (or `LOCAL_PHOTO_AGENT_DEBUG_REASONING=true`) to send Ollama's `think` parameter on chat requests; the model's reasoning is streamed and shown in a collapsible "Reasoning trace" block above each answer, and persisted in the chat history
 - **Chat API** — REST endpoint at `POST /_api/chat` for programmatic access to the LLM
 
 ## Prerequisites
@@ -279,6 +282,12 @@ Open [http://localhost:8050](http://localhost:8050) after starting the app.
 > **Preview & Detail Modal:** Click any thumbnail returned by the chat to open a modal with a larger image preview and the extracted metadata (description, subjects, objects, colors, setting, mood, tags). If an image has not been processed yet, the modal shows a "Not yet processed" placeholder.
 >
 > **Fullscreen Viewer:** From the detail modal, click the **Fullscreen** button to open a full-viewport photo browser with a black background. Use the left/right arrow buttons (or keyboard arrow keys) to navigate through the album. A **Toggle Info** button shows or hides a semi-transparent overlay with the extracted description, subjects, and tags. You can also press **`i`** on the keyboard to toggle the overlay when the fullscreen viewer is open.
+>
+> **Slideshow for large results:** When a `/find` or `/tag` result contains more than the slideshow threshold (default **50**, configurable via `LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD` or **Settings → Connection → Slideshow threshold**), the chat does not render the thumbnail gallery. Instead it shows a **Start slideshow** button. Clicking it opens the same fullscreen viewer described above, starting at the first match, so you can page through the entire result set with the arrow keys. Set the threshold to `0` to always show the preview gallery.
+>
+> **Slideshow from the gallery:** Even when the result is below the threshold and the preview gallery is shown, a **Start slideshow** button sits in the sort row above the thumbnails. Clicking it opens the fullscreen viewer seeded with the full result set, so you can browse every photo with the arrow keys without paging through the gallery. The sort dropdown and order toggle next to it control the initial ordering of the slideshow. For `/tag` results the preview gallery shows at most 20 thumbnails, but the slideshow includes every photo matching the selected tag(s); the button label shows the full count.
+>
+> **Ordering results:** Both the preview gallery and the fullscreen slideshow/viewer have a **Sort** dropdown so you can reorder the photo list by **Relevance** (the search score — the default for `/find` results), **Date taken** (the EXIF capture date), **Date** (the file modification date), or **Name** (the file name). Next to each dropdown is a small **order toggle** button showing an arrow (`▲` ascending / `▼` descending). Each sort key has a natural default direction — Relevance defaults to descending (best match first), while Date taken, Date, and Name default to ascending; clicking the toggle flips the direction. Switching the sort key resets the direction to that key's default. In the gallery the dropdown sits above the thumbnails, alongside the **Start slideshow** button; and in the fullscreen viewer it sits in the top-left corner. Re-sorting keeps the photo you are currently viewing in place, so you can change the ordering mid-browse without losing your spot. Photos whose date metadata is missing sort to the end regardless of direction.
 
 ## REST API Endpoints
 
@@ -329,6 +338,18 @@ Response:
 ```
 
 When the chat service returns a typed response (e.g., photo results), the response includes an additional `response_type` field (e.g., `"photos"`).
+
+When debug reasoning is enabled (`LOCAL_PHOTO_AGENT_DEBUG_REASONING=true` or **Settings → Connection → Show reasoning traces**), the response also includes a `thinking` field with the model's reasoning trace (when the model produces one):
+
+```json
+{
+  "status": "success",
+  "response": "This is a beautiful landscape photo with...",
+  "sender": "assistant",
+  "model": "gemma4:e2b-it-qat",
+  "thinking": "The user asked about the photo, so I should describe..."
+}
+```
 
 ### Find Similar API Example
 
@@ -457,7 +478,7 @@ When a HEIC image is processed or previewed in the web UI, it is automatically c
 - **Automatic resume**: By default, the CLI will skip already-processed images on consecutive runs (use `--no-resume` to force reprocessing).
 - **Parallel batch processing**: Set `--concurrency N` (CLI) or `LOCAL_PHOTO_AGENT_BATCH_CONCURRENCY=N` (env) to process up to `N` images in parallel against the LLM backend. The default `1` preserves the historical sequential behaviour. Database writes are serialized internally, so only the LLM/embedding network calls run concurrently. This requires the backend to accept concurrent requests — for Ollama, set `OLLAMA_NUM_PARALLEL` (and ensure enough model slots/contexts) or requests will simply queue server-side with no speedup. In the web UI, adjust **Settings → Connection → Batch concurrency** to change the value used by `/process` without restarting the app.
 - **Per-folder settings**: The batch concurrency value is persisted per folder in `<folder>/.local-photo-agent/settings.json` and read at processing start, so each folder can have its own parallelism. When you change **Settings → Connection → Batch concurrency** in the web UI, it is written to the active folder's settings file. On processing start (CLI or `/process`), the per-folder file overrides the env/CLI default when present; otherwise the env/CLI default applies.
-- **Persisted connection settings**: The same per-folder `settings.json` also stores the LLM host/port/model/backend, timeout, recursive/dry-run flags, and embedding options when you change them in the **Settings** modal. On app start, stored values override the environment defaults, so the Settings form and the chat/processing clients pick up the saved values. `setup.sh --host <ip>` (and `setup-arm.sh --host <ip>`) pre-fills the LLM host into this file at build time; all other settings are only written when you change them in the UI.
+- **Persisted connection settings**: The same per-folder `settings.json` also stores the LLM host/port/model/backend, timeout, recursive/dry-run flags, the debug-reasoning toggle, embedding options, and the slideshow threshold when you change them in the **Settings** modal. On app start, stored values override the environment defaults, so the Settings form and the chat/processing clients pick up the saved values. `setup.sh --host <ip>` (and `setup-arm.sh --host <ip>`) pre-fills the LLM host into this file at build time; all other settings are only written when you change them in the UI.
 
 ## Key Design Principles
 

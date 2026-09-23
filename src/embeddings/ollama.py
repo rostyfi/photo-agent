@@ -21,6 +21,7 @@ import base64
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -186,7 +187,7 @@ class OllamaEmbeddingGenerator(BaseEmbeddingGenerator):
         url = f"{self.base_url}/api/embeddings"
         use_model = model or self.model
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": use_model,
         }
         # nomic-embed-text is a text embedding model, not vision

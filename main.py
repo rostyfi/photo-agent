@@ -294,7 +294,7 @@ def main():
     # Process each folder separately to enable embedding generation
     all_results = []
     len(image_paths)
-    processed = 0
+    processed_count = 0
     skipped = 0
     successes = 0
     failures = 0
@@ -313,7 +313,7 @@ def main():
             concurrency=folder_concurrency,
         )
         all_results.extend(result["results"])
-        processed += result["processed"]
+        processed_count += result["processed"]
         skipped += result["skipped"]
         successes += result["successes"]
         failures += result["failures"]

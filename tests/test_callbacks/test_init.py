@@ -107,6 +107,7 @@ class TestRegisterCallbacksWiring(unittest.TestCase):
                 html.Div(id="input-model"),
                 html.Div(id="input-backend"),
                 html.Div(id="input-timeout"),
+                html.Div(id="input-slideshow-threshold"),
                 html.Div(id="chk-dry-run"),
                 html.Div(id="chk-recursive"),
                 html.Div(id="sql-input"),

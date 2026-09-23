@@ -87,7 +87,7 @@ check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unreachable = true
-# Gradual typing: do not fail on missing annotations yet; revisit as coverage grows.
+# Gradual typing: enforce type checking now that the baseline is resolved.
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 files = ["src", "plugins", "main.py", "app.py"]

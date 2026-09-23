@@ -268,7 +268,7 @@ def extract_metadata(image_path: str) -> ImageMetadata:
 
             # Try to get EXIF data
             try:
-                exif_data = img._getexif() or {}
+                exif_data = img._getexif() or {}  # type: ignore[attr-defined]
 
                 # Common EXIF tags with their IDs
                 exif_tags = {
@@ -334,8 +334,10 @@ def extract_metadata(image_path: str) -> ImageMetadata:
                         7: "Mirrored and Rotated 90°",
                         8: "Rotated 90°",
                     }
+                    orient_int = int(metadata.orientation) if str(metadata.orientation).isdigit() else 0
                     metadata.orientation = orientation_map.get(
-                        metadata.orientation, f"Unknown ({metadata.orientation})"
+                        orient_int,
+                        f"Unknown ({metadata.orientation})",
                     )
 
                 # Try to extract GPS data

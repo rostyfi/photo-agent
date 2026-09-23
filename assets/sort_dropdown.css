@@ -1,0 +1,76 @@
+/* Dark theme for the sort dropdowns (gallery, slideshow, fullscreen viewer).
+ *
+ * Dash 4.x renders dcc.Dropdown with custom ``dash-dropdown-*`` classes
+ * (not react-select). The ``sort-dropdown`` class is applied to the outer
+ * wrapper by the gallery/slideshow/fullscreen sort controls, so all rules
+ * scope off it.
+ */
+
+/* Closed control (the visible "trigger"). */
+.sort-dropdown .dash-dropdown-trigger {
+    background-color: #343a40;
+    color: #f8f9fa;
+    border-color: #495057;
+}
+
+.sort-dropdown .dash-dropdown-trigger:hover {
+    border-color: #6c757d;
+}
+
+/* Selected value text and placeholder. */
+.sort-dropdown .dash-dropdown-value,
+.sort-dropdown .dash-dropdown-value-item,
+.sort-dropdown .dash-dropdown-placeholder {
+    color: #f8f9fa;
+}
+
+/* Trigger / clear / search icons. */
+.sort-dropdown .dash-dropdown-trigger-icon,
+.sort-dropdown .dash-dropdown-clear,
+.sort-dropdown .dash-dropdown-search-icon {
+    color: #f8f9fa;
+}
+
+/* Open menu and its options.
+ *
+ * Dash 4.x renders the open menu through a portal whose container is the
+ * outer ``.dash-dropdown-wrapper`` div, so the menu is a sibling of the
+ * ``.sort-dropdown`` trigger, not a descendant. A descendant selector
+ * (``.sort-dropdown .dash-dropdown-content``) therefore never matches and
+ * the menu falls back to the default light ``--Dash-Fill-Inverse-Strong``.
+ * Scope the menu via the wrapper that contains a ``.sort-dropdown`` trigger
+ * using ``:has()`` instead.
+ */
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-content,
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-options {
+    background-color: #343a40;
+    color: #f8f9fa;
+    border-color: #495057;
+}
+
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-option {
+    background-color: #343a40;
+    color: #f8f9fa;
+}
+
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-option:hover,
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-option.is-selected,
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-option.is-focused {
+    background-color: #495057;
+    color: #f8f9fa;
+}
+
+/* Search input inside the open menu (when searchable). */
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-search-container {
+    background-color: #343a40;
+    border-color: #495057;
+}
+
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-search {
+    background-color: #343a40;
+    color: #f8f9fa;
+}
+
+.dash-dropdown-wrapper:has(.sort-dropdown) .dash-dropdown-search::placeholder {
+    color: #adb5bd;
+}

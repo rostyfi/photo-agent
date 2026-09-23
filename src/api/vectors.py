@@ -187,7 +187,7 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
         if query_vector:
             if not isinstance(query_vector, list) or len(query_vector) == 0:
                 return _error("vector must be a non-empty list of floats", 400)
-            query_vector_final = query_vector
+            query_vector_final: list[float] | None = query_vector
         elif query_text:
             try:
                 from src.embeddings import create_generator
@@ -220,6 +220,9 @@ def register_vectors_blueprint(server, config: AppConfig) -> Blueprint:
                 return _error(f"Failed to generate embedding from image: {e}", 500)
         else:
             return _error("One of query, vector, or image_path must be provided", 400)
+
+        if query_vector_final is None:
+            return _error("Failed to generate embedding vector", 500)
 
         try:
             db = FeaturesDatabase(db_path)

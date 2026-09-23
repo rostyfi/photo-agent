@@ -59,6 +59,51 @@ DEFAULT_LLM_MODEL = "gemma4:e2b-it-qat"
 # (OLLAMA_NUM_PARALLEL / multi-slot); otherwise requests will queue server-side.
 DEFAULT_BATCH_CONCURRENCY = 1
 
+# When a chat result yields more than this many photos, the preview gallery is
+# replaced by a single "Start slideshow" button that opens the fullscreen
+# viewer. Override via LOCAL_PHOTO_AGENT_SLIDESHOW_THRESHOLD or the per-folder
+# settings (Settings → Connection → Slideshow threshold).
+DEFAULT_SLIDESHOW_THRESHOLD = 50
+
+# =============================================================================
+# PHOTO SORT CONSTANTS
+# =============================================================================
+# Sort keys offered by the preview-gallery and fullscreen-slideshow sort
+# controls. ``relevance`` orders by the search score (descending) for /find
+# results and otherwise preserves the search-result order; ``date_taken`` is
+# the EXIF capture date; ``date`` is the file modification date; ``name`` is
+# the file name.
+SORT_KEY_RELEVANCE = "relevance"
+SORT_KEY_DATE_TAKEN = "date_taken"
+SORT_KEY_DATE = "date"
+SORT_KEY_NAME = "name"
+DEFAULT_SORT_KEY = SORT_KEY_RELEVANCE
+
+SORT_OPTIONS = [
+    {"label": "Relevance", "value": SORT_KEY_RELEVANCE},
+    {"label": "Date taken", "value": SORT_KEY_DATE_TAKEN},
+    {"label": "Date", "value": SORT_KEY_DATE},
+    {"label": "Name", "value": SORT_KEY_NAME},
+]
+
+# Sort direction. Each sort key has a natural default: relevance is
+# descending (best match first), the others are ascending (oldest/A-first).
+SORT_ORDER_ASC = "asc"
+SORT_ORDER_DESC = "desc"
+DEFAULT_SORT_ORDER = SORT_ORDER_ASC
+
+_DEFAULT_ORDER_BY_KEY = {
+    SORT_KEY_RELEVANCE: SORT_ORDER_DESC,
+    SORT_KEY_DATE_TAKEN: SORT_ORDER_ASC,
+    SORT_KEY_DATE: SORT_ORDER_ASC,
+    SORT_KEY_NAME: SORT_ORDER_ASC,
+}
+
+
+def default_order_for(sort_key: str | None) -> str:
+    """Return the natural default sort direction for *sort_key*."""
+    return _DEFAULT_ORDER_BY_KEY.get(sort_key or "", DEFAULT_SORT_ORDER)
+
 # =============================================================================
 # LOGGING CONSTANTS
 # =============================================================================

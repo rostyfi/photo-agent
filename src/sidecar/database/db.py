@@ -1077,6 +1077,47 @@ class FeaturesDatabase:
 
         return format_metadata_for_display(metadata_obj)
 
+    def get_sort_metadata_batch(self, image_paths: list[str]) -> dict[str, dict]:
+        """Retrieve the sort-relevant metadata for a batch of images.
+
+        Args:
+            image_paths: Paths to look up. Duplicates are deduplicated by the
+                returned dict's keys.
+
+        Returns:
+            Mapping of ``image_path`` to ``{"date_taken", "date_modified",
+            "file_name"}``. Paths without a metadata row are omitted. EXIF
+            ``date_taken`` is commonly stored as ``"YYYY:MM:DD HH:MM:SS"``;
+            callers normalise colons to dashes before comparing.
+        """
+        if not image_paths or not self.db_path.exists():
+            return {}
+
+        paths_json = json.dumps([str(p) for p in image_paths])
+        try:
+            with self.get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    WITH input(image_path) AS (SELECT value FROM json_each(?))
+                    SELECT im.image_path, im.date_taken, im.date_modified, im.file_name
+                    FROM image_metadata im
+                    JOIN input ON im.image_path = input.image_path
+                    """,
+                    (paths_json,),
+                ).fetchall()
+        except Exception as e:
+            logger.error("Failed to batch-fetch sort metadata: %s", e, exc_info=True)
+            return {}
+
+        return {
+            row[0]: {
+                "date_taken": row[1],
+                "date_modified": row[2],
+                "file_name": row[3],
+            }
+            for row in rows
+        }
+
     def save_embedding(self, image_path: str, model_name: str, vector: list[float]) -> None:
         """Save embedding to both metadata and vector index.
 

@@ -56,6 +56,11 @@ class FindTool(BaseTool):
         Returns:
             ChatResponse with matching photos or error
         """
+        if not folder_path:
+            return ChatResponse(
+                status="error", response="No folder specified. Please select a folder first.",
+                sender="assistant", model="N/A",
+            )
         if not args:
             return ChatResponse(
                 status="error", response="Please provide a description to search for.", sender="assistant", model="N/A"
@@ -97,6 +102,14 @@ class FindTool(BaseTool):
                 timeout=self.config.timeout,
             )
             query_vector = generator.generate_from_text(description)
+
+            if query_vector is None:
+                db.close()
+                return ChatResponse(
+                    status="error",
+                    response="Failed to generate embedding for the search query.",
+                    sender="assistant", model="N/A",
+                )
 
             # Find similar photos using REST-based search with the parsed limit
             # and optional date filter.

@@ -25,3 +25,5 @@ class ChatResponse:
     sender: str = "assistant"
     model: str = "unknown"
     response_type: str | None = None
+    # Optional model reasoning trace, surfaced when debug reasoning is on.
+    thinking: str | None = None

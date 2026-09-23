@@ -198,7 +198,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                 )
 
             try:
-                parsed = json.loads(result.response)
+                parsed = json.loads(result.response) if result.response else None
                 result.parsed = parsed
             except json.JSONDecodeError:
                 result.parsed = None

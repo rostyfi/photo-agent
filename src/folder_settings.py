@@ -37,6 +37,8 @@ KEY_DRY_RUN = "dry_run"
 KEY_EMBEDDING_ENABLED = "embedding_enabled"
 KEY_EMBEDDING_MODEL = "embedding_model"
 KEY_EMBEDDING_BACKEND = "embedding_backend"
+KEY_SLIDESHOW_THRESHOLD = "slideshow_threshold"
+KEY_DEBUG_REASONING = "debug_reasoning"
 
 # Maps a settings key to the config attribute(s) that may hold it. AppConfig
 # uses the ``llm_*`` prefix; ProcessingConfig uses bare ``host``/``port``/...
@@ -53,12 +55,14 @@ _ATTR_BY_KEY: dict[str, tuple[str, ...]] = {
     KEY_EMBEDDING_MODEL: ("embedding_model",),
     KEY_EMBEDDING_BACKEND: ("embedding_backend",),
     KEY_BATCH_CONCURRENCY: ("batch_concurrency",),
+    KEY_SLIDESHOW_THRESHOLD: ("slideshow_threshold",),
+    KEY_DEBUG_REASONING: ("debug_reasoning",),
 }
 
 # Sentinel for "value could not be coerced; skip it".
 _UNSET = object()
-_INT_KEYS = (KEY_LLM_PORT, KEY_TIMEOUT, KEY_BATCH_CONCURRENCY)
-_BOOL_KEYS = (KEY_RECURSIVE, KEY_DRY_RUN, KEY_EMBEDDING_ENABLED)
+_INT_KEYS = (KEY_LLM_PORT, KEY_TIMEOUT, KEY_BATCH_CONCURRENCY, KEY_SLIDESHOW_THRESHOLD)
+_BOOL_KEYS = (KEY_RECURSIVE, KEY_DRY_RUN, KEY_EMBEDDING_ENABLED, KEY_DEBUG_REASONING)
 
 
 def _coerce_value(key: str, raw):

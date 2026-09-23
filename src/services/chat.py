@@ -78,7 +78,7 @@ class ChatService:
 
         # Now update ToolsTool with the complete tools dict
         if "/tools" in self._tools:
-            self._tools["/tools"]._all_tools = self._tools
+            self._tools["/tools"]._all_tools = self._tools  # type: ignore[attr-defined]
 
     def _get_tool_commands(self) -> list[str]:
         """Get list of all registered tool commands.
@@ -165,9 +165,18 @@ class ChatService:
         tools_list = self._get_tools_list()
         examples = self._get_tool_examples()
 
+        think_rule = ""
+        if getattr(self.config, "debug_reasoning", False):
+            think_rule = (
+                "RULE 0: ALWAYS reason briefly in your thinking before responding, even for tool commands. "
+                "Your thinking is internal and separate from your response — it does NOT count as "
+                "'other text' or violate the rule that your response must be only the tool command.\n\n"
+            )
+
         return (
             "You are the Local Photo Agent, a chat assistant for a photo feature extraction system.\n"
             "You MUST follow these rules EXACTLY:\n\n"
+            f"{think_rule}"
             "RULE 1: If the user's intent matches ANY tool, respond with EXACTLY ONE tool command and NOTHING else.\n"
             "RULE 2: If the user's intent does NOT match any tool, respond as a helpful assistant.\n\n"
             "CRITICAL INSTRUCTIONS FOR TOOL COMMANDS:\n"
@@ -181,7 +190,7 @@ class ChatService:
             f"{tools_list}\n\n"
             "IMPORTANT: When the user says ANYTHING that matches a tool's purpose, return ONLY the tool command.\n"
             "For /find command: If the user specifies a number (e.g., 'find 5 photos of cats', 'show me 10 images'), \n"
-            "extract the number and include it at the beginning of the description in the tool command.\n"
+            "extract the number EXACTLY as stated and include it at the beginning of the description in the tool command.\n"
             "For /tags command: Use '/tags' for listing all tags, '/tags <topic>' for finding tags related to a topic.\n"
             "For /tag command: Use '/tag <tagname>' for showing photos with a specific tag and related tags.\n"
             "\n"
@@ -339,8 +348,13 @@ class ChatService:
             # Get system prompt
             system_prompt = self.get_system_prompt()
 
-            raw_response = chat_client.chat(message, system_prompt=system_prompt, history=history)
+            think = bool(getattr(self.config, "debug_reasoning", False))
+            raw_response, thinking = chat_client.chat_with_thinking(
+                message, system_prompt=system_prompt, history=history, think=think
+            )
             logger.debug("[Chat LLM] Raw response: %r", raw_response)
+            if thinking:
+                logger.debug("[Chat LLM] Reasoning trace: %r", thinking)
 
             # Clean up response
             cleaned_response = self._clean_response(raw_response)
@@ -354,25 +368,35 @@ class ChatService:
                 result = self.handle_tool_command(response_stripped, folder_path)
                 # Update model in response to reflect the actual model used
                 result.model = effective_model
+                result.thinking = thinking
                 return result
 
             if response_stripped.startswith("/find ") and folder_path:
                 result = self.handle_tool_command(response_stripped, folder_path)
                 result.model = effective_model
+                result.thinking = thinking
                 return result
 
             if response_stripped.startswith("/tags") and folder_path:
                 result = self.handle_tool_command(response_stripped, folder_path)
                 result.model = effective_model
+                result.thinking = thinking
                 return result
 
             if response_stripped.startswith("/tag ") and folder_path:
                 result = self.handle_tool_command(response_stripped, folder_path)
                 result.model = effective_model
+                result.thinking = thinking
                 return result
 
             # Regular LLM response
-            return ChatResponse(status="success", response=cleaned_response, sender="assistant", model=effective_model)
+            return ChatResponse(
+                status="success",
+                response=cleaned_response,
+                sender="assistant",
+                model=effective_model,
+                thinking=thinking,
+            )
 
         except requests.exceptions.RequestException as e:
             logger.error("Chat API request failed: %s", e)
@@ -406,6 +430,7 @@ class ChatService:
             "sender": result.sender,
             "status": result.status,
             "response_type": result.response_type,
+            "thinking": result.thinking,
         }
 
     def process_message_stream(
@@ -457,10 +482,18 @@ class ChatService:
             effective_model = model or chat_client.model
             system_prompt = self.get_system_prompt()
 
+            think = bool(getattr(self.config, "debug_reasoning", False))
             full_response = ""
-            for chunk in chat_client.chat_stream(message, system_prompt=system_prompt, history=history):
-                full_response += chunk
-                yield {"type": "token", "content": chunk}
+            thinking_text = ""
+            for chunk in chat_client.chat_stream_events(
+                message, system_prompt=system_prompt, history=history, think=think
+            ):
+                if chunk.kind == "thinking":
+                    thinking_text += chunk.content
+                    yield {"type": "thinking", "content": chunk.content}
+                else:
+                    full_response += chunk.content
+                    yield {"type": "token", "content": chunk.content}
 
             # Check whether the LLM's complete response is a tool command
             cleaned_response = self._clean_response(full_response)
@@ -471,9 +504,12 @@ class ChatService:
             is_tags_command = response_stripped.startswith("/tags") and folder_path
             is_tag_command = response_stripped.startswith("/tag ") and folder_path
 
+            final_thinking = thinking_text or None
+
             if is_tool_command or is_find_command or is_tags_command or is_tag_command:
                 result = self.handle_tool_command(response_stripped, folder_path)
                 result.model = effective_model
+                result.thinking = final_thinking
                 yield from self._chat_response_to_events(result)
                 return
 
@@ -485,6 +521,7 @@ class ChatService:
                 "sender": "assistant",
                 "status": "success",
                 "response_type": None,
+                "thinking": final_thinking,
             }
 
         except requests.exceptions.RequestException as e:
