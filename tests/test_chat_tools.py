@@ -407,6 +407,67 @@ class TestCountTool:
         error = tool.validate(folder_path="/some/path")
         assert error is None
 
+    def test_count_no_folder_returns_error(self):
+        """CountTool returns an error response when no folder is specified."""
+        from src.config import AppConfig
+        from src.services.chat_tools.count import CountTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = CountTool(config)
+        result = tool.execute(folder_path=None)
+        assert result.status == "error"
+        assert "No folder specified" in result.response
+
+    def test_count_with_empty_folder(self, tmp_path):
+        """CountTool returns 0 for a folder with no processed photos."""
+        from src.config import AppConfig
+        from src.services.chat_tools.count import CountTool
+        from src.sidecar.database import FeaturesDatabase
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.init_db()
+        db.close()
+
+        tool = CountTool(config)
+        result = tool.execute(folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "0" in result.response
+
+    def test_count_with_photos(self, tmp_path):
+        """CountTool returns the correct count of processed photos."""
+        from src.config import AppConfig
+        from src.services.chat_tools.count import CountTool
+        from src.sidecar.database import FeaturesDatabase
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.init_db()
+        db.save_extraction("/photos/a.jpg", {"success": True, "parsed": {"description": "cat"}})
+        db.save_extraction("/photos/b.jpg", {"success": True, "parsed": {"description": "dog"}})
+        db.close()
+
+        tool = CountTool(config)
+        result = tool.execute(folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "2" in result.response
+
+    def test_count_handles_db_error(self):
+        """CountTool returns an error response when the DB raises."""
+        from src.config import AppConfig
+        from src.services.chat_tools.count import CountTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = CountTool(config)
+
+        with patch("src.sidecar.database.db.FeaturesDatabase") as mock_fdb:
+            mock_fdb.default_db_path.return_value = "/nonexistent/path.db"
+            mock_fdb.return_value.list_extractions.side_effect = Exception("DB error")
+            result = tool.execute(folder_path="/some/folder")
+
+        assert result.status == "error"
+        assert "Failed to count" in result.response
+
 
 class TestFindTool:
     """Tests for FindTool."""
@@ -469,6 +530,59 @@ class TestScanTool:
         assert ScanTool.metadata.command == "/scan"
         assert ScanTool.metadata.name == "Scan"
         assert ScanTool.metadata.requires_folder is True
+
+    def test_scan_no_folder_returns_error(self):
+        """ScanTool returns an error response when no folder is specified."""
+        from src.config import AppConfig
+        from src.services.chat_tools.scan import ScanTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ScanTool(config)
+        result = tool.execute(folder_path=None)
+        assert result.status == "error"
+        assert "No folder specified" in result.response
+
+    def test_scan_empty_folder(self, tmp_path):
+        """ScanTool returns 0 total and 0 pending for an empty folder."""
+        from src.config import AppConfig
+        from src.services.chat_tools.scan import ScanTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ScanTool(config)
+        result = tool.execute(folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "0" in result.response
+
+    def test_scan_with_photos(self, tmp_path):
+        """ScanTool returns correct counts for a folder with photos."""
+        from src.config import AppConfig
+        from src.services.chat_tools.scan import ScanTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+
+        # Create some image files
+        (tmp_path / "a.jpg").write_bytes(b"fake")
+        (tmp_path / "b.jpg").write_bytes(b"fake")
+
+        tool = ScanTool(config)
+        result = tool.execute(folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "2" in result.response
+
+    def test_scan_handles_error(self):
+        """ScanTool returns an error response when listing raises."""
+        from src.config import AppConfig
+        from src.services.chat_tools.scan import ScanTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ScanTool(config)
+
+        with patch("src.file_processing.ProcessableFileLister") as mock_lister:
+            mock_lister.side_effect = Exception("scan error")
+            result = tool.execute(folder_path="/some/folder")
+
+        assert result.status == "error"
+        assert "Failed to scan" in result.response
 
 
 class TestProcessTool:
