@@ -104,6 +104,7 @@ def default_order_for(sort_key: str | None) -> str:
     """Return the natural default sort direction for *sort_key*."""
     return _DEFAULT_ORDER_BY_KEY.get(sort_key or "", DEFAULT_SORT_ORDER)
 
+
 # =============================================================================
 # LOGGING CONSTANTS
 # =============================================================================

@@ -16,9 +16,18 @@ from contextlib import contextmanager
 from plugins.llm import create_extractor
 from src.components import build_detail_modal_content, build_fullscreen_viewer
 from src.config import AppConfig
-from src.constants import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL, DEFAULT_LLM_PORT, DEFAULT_LLM_TIMEOUT
-from src.constants import SORT_KEY_DATE, SORT_KEY_DATE_TAKEN, SORT_KEY_NAME, SORT_KEY_RELEVANCE
-from src.constants import SORT_ORDER_ASC, SORT_ORDER_DESC, default_order_for
+from src.constants import (
+    DEFAULT_LLM_HOST,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_PORT,
+    DEFAULT_LLM_TIMEOUT,
+    SORT_KEY_DATE,
+    SORT_KEY_DATE_TAKEN,
+    SORT_KEY_NAME,
+    SORT_KEY_RELEVANCE,
+    SORT_ORDER_DESC,
+    default_order_for,
+)
 from src.sidecar.database import FeaturesDatabase
 from src.simple_processing_tracker import SimpleProcessingTracker
 from src.vector_search.availability import is_vector_search_available
@@ -149,7 +158,7 @@ def sort_paths(
             # Ascending = lowest score first; descending = highest first.
             ascending = sorted(
                 base,
-                key=lambda p: (scores[p] if p in scores and scores[p] is not None else float("-inf")),
+                key=lambda p: scores[p] if p in scores and scores[p] is not None else float("-inf"),
             )
             return list(reversed(ascending)) if descending else ascending
         return base

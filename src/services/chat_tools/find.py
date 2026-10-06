@@ -58,8 +58,10 @@ class FindTool(BaseTool):
         """
         if not folder_path:
             return ChatResponse(
-                status="error", response="No folder specified. Please select a folder first.",
-                sender="assistant", model="N/A",
+                status="error",
+                response="No folder specified. Please select a folder first.",
+                sender="assistant",
+                model="N/A",
             )
         if not args:
             return ChatResponse(
@@ -108,7 +110,8 @@ class FindTool(BaseTool):
                 return ChatResponse(
                     status="error",
                     response="Failed to generate embedding for the search query.",
-                    sender="assistant", model="N/A",
+                    sender="assistant",
+                    model="N/A",
                 )
 
             # Find similar photos using REST-based search with the parsed limit

@@ -68,18 +68,18 @@ _SYSTEM_PROMPT = (
     "You classify date expressions for a photo search filter and may resolve them.\n"
     "You are given today's date and a user-supplied date expression.\n"
     "Decide which parser should handle it:\n"
-    "- \"deterministic\": standard forms the regex parser handles exactly: "
+    '- "deterministic": standard forms the regex parser handles exactly: '
     "seasons (summer/winter/spring/fall/autumn) optionally with a year "
-    "(\"summer 2024\", \"last summer\", \"this winter\"), month names optionally "
-    "with a year (\"January 2024\", \"last march\", \"august\"), bare years "
-    "(\"2023\"), ISO dates (\"2024-01-15\", \"2024-01\"), and relative keywords "
-    "(\"today\", \"yesterday\", \"this week\", \"last week\", \"this month\", "
-    "\"last month\", \"this year\", \"last year\").\n"
-    "- \"llm\": open-ended, contextual, or fuzzy expressions the regex parser "
-    "cannot handle (e.g. \"around Christmas a few years ago\", \"when we were in "
-    "Spain\", \"last few months\"). Resolve these to an inclusive date range using "
+    '("summer 2024", "last summer", "this winter"), month names optionally '
+    'with a year ("January 2024", "last march", "august"), bare years '
+    '("2023"), ISO dates ("2024-01-15", "2024-01"), and relative keywords '
+    '("today", "yesterday", "this week", "last week", "this month", '
+    '"last month", "this year", "last year").\n'
+    '- "llm": open-ended, contextual, or fuzzy expressions the regex parser '
+    'cannot handle (e.g. "around Christmas a few years ago", "when we were in '
+    'Spain", "last few months"). Resolve these to an inclusive date range using '
     "today's date.\n"
-    "- \"none\": not a date expression at all.\n"
+    '- "none": not a date expression at all.\n'
     "ALSO return your best-effort start/end as YYYY-MM-DD regardless of strategy "
     "(used as a fallback). Use null when not applicable.\n"
     "Respond with ONLY a JSON object, no markdown, no explanation:\n"
@@ -93,19 +93,19 @@ _SPLIT_SYSTEM_PROMPT = (
     "description of photos with an optional time reference (which may or may not "
     "be separated by an '@').\n"
     "Extract:\n"
-    "- \"description\": the visual/subject description with all time words removed "
-    "(e.g. from \"photos from last winter with a baby on them\" extract \"baby\"). "
+    '- "description": the visual/subject description with all time words removed '
+    '(e.g. from "photos from last winter with a baby on them" extract "baby"). '
     "Keep it concise — subjects and scenes only, no date words, no filler like "
-    "\"photos of\" / \"pictures of\". Never empty.\n"
-    "- \"date_phrase\": the time words exactly as the user wrote them, or null if "
-    "there is no time reference (e.g. \"last winter\", \"summer 2024\", "
-    "\"January 2024\", \"2023\").\n"
-    "- \"strategy\": how to resolve the date phrase — \"deterministic\" for "
+    '"photos of" / "pictures of". Never empty.\n'
+    '- "date_phrase": the time words exactly as the user wrote them, or null if '
+    'there is no time reference (e.g. "last winter", "summer 2024", '
+    '"January 2024", "2023").\n'
+    '- "strategy": how to resolve the date phrase — "deterministic" for '
     "standard forms the regex parser handles (seasons/months/years/relative "
-    "keywords), \"llm\" for open-ended or fuzzy time references, \"none\" when "
+    'keywords), "llm" for open-ended or fuzzy time references, "none" when '
     "date_phrase is null.\n"
-    "- \"start\"/\"end\": your best-effort inclusive range as YYYY-MM-DD (used "
-    "when strategy is \"llm\", or as a fallback). Use null when not applicable.\n"
+    '- "start"/"end": your best-effort inclusive range as YYYY-MM-DD (used '
+    'when strategy is "llm", or as a fallback). Use null when not applicable.\n'
     "Respond with ONLY a JSON object, no markdown, no explanation:\n"
     '{"description": "...", "date_phrase": "...|null", '
     '"strategy": "deterministic|llm|none", "start": "YYYY-MM-DD|null", '
@@ -196,7 +196,9 @@ class DateParserService:
         if llm_start and llm_end:
             logger.info(
                 "Deterministic parser failed for %r; using LLM range %s..%s",
-                expression, llm_start, llm_end,
+                expression,
+                llm_start,
+                llm_end,
             )
             return llm_start, llm_end
         logger.warning("Could not resolve date expression %r", expression)
@@ -274,7 +276,9 @@ class DateParserService:
         if llm_start and llm_end:
             logger.info(
                 "Deterministic parser failed for %r; using LLM range %s..%s",
-                date_phrase, llm_start, llm_end,
+                date_phrase,
+                llm_start,
+                llm_end,
             )
             return description, llm_start, llm_end
         return description, None, None

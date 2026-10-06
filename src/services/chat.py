@@ -99,9 +99,7 @@ class ChatService:
             metadata = tool.metadata
             # For /find, /tags, and /tag, include the usage pattern
             if command == "/find":
-                lines.append(
-                    f"{command} <number> <description> [@<date>] - {metadata.description} / {metadata.usage}"
-                )
+                lines.append(f"{command} <number> <description> [@<date>] - {metadata.description} / {metadata.usage}")
             elif command == "/tags":
                 lines.append(f"{command} [topic] - {metadata.description} / {metadata.usage}")
             elif command == "/tag":

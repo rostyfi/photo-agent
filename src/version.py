@@ -26,6 +26,7 @@ try:  # pragma: no cover - exercised only when installed
         except PackageNotFoundError:
             return _FALLBACK_VERSION
 except ImportError:  # pragma: no cover - Python <3.8 guard
+
     def _resolve_version() -> str:
         return _FALLBACK_VERSION
 

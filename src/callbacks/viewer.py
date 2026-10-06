@@ -150,18 +150,14 @@ def register_fullscreen_open_callback(app):
 
         paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
         current_index = store_data.get("index") if isinstance(store_data, dict) else None
-        original_paths = (
-            store_data.get("original_paths") if isinstance(store_data, dict) else None
-        ) or paths
+        original_paths = (store_data.get("original_paths") if isinstance(store_data, dict) else None) or paths
 
         if current_index is None or current_index >= len(paths):
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
         order = _order_from_label(order_label)
         current_image = paths[current_index]
-        sorted_paths = sort_paths(
-            original_paths, sort_key, folder, original_paths=original_paths, order=order
-        )
+        sorted_paths = sort_paths(original_paths, sort_key, folder, original_paths=original_paths, order=order)
         try:
             new_index = sorted_paths.index(current_image)
         except ValueError:
@@ -369,9 +365,7 @@ def register_fullscreen_nav_callback(app):
 
         paths = store_data.get("paths", []) if isinstance(store_data, dict) else []
         current_index = store_data.get("index") if isinstance(store_data, dict) else None
-        original_paths = (
-            store_data.get("original_paths") if isinstance(store_data, dict) else None
-        ) or paths
+        original_paths = (store_data.get("original_paths") if isinstance(store_data, dict) else None) or paths
 
         if current_index is None or not paths:
             return dash.no_update, dash.no_update
@@ -384,9 +378,7 @@ def register_fullscreen_nav_callback(app):
             return dash.no_update, dash.no_update
 
         image_path = paths[new_index]
-        content, store = _open_fullscreen_content(
-            image_path, folder, new_index, paths, original_paths=original_paths
-        )
+        content, store = _open_fullscreen_content(image_path, folder, new_index, paths, original_paths=original_paths)
         return content, store
 
 
@@ -432,14 +424,9 @@ def register_fullscreen_sort_callback(app):
             order = default_order_for(sort_key)
 
         current_image = paths[current_index] if current_index is not None and current_index < len(paths) else None
-        sorted_paths = sort_paths(
-            original_paths, sort_key, folder, original_paths=original_paths, order=order
-        )
+        sorted_paths = sort_paths(original_paths, sort_key, folder, original_paths=original_paths, order=order)
 
-        if current_image and current_image in sorted_paths:
-            new_index = sorted_paths.index(current_image)
-        else:
-            new_index = 0
+        new_index = sorted_paths.index(current_image) if current_image and current_image in sorted_paths else 0
 
         content, store = _open_fullscreen_content(
             sorted_paths[new_index], folder, new_index, sorted_paths, original_paths=original_paths

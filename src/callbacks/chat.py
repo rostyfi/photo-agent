@@ -13,8 +13,14 @@ import dash_bootstrap_components as dbc
 import requests
 from dash import Input, Output, State, callback_context, dcc, html
 
-from src.constants import DEFAULT_SLIDESHOW_THRESHOLD, SORT_OPTIONS
-from src.constants import SORT_KEY_RELEVANCE, SORT_ORDER_ASC, SORT_ORDER_DESC, default_order_for
+from src.constants import (
+    DEFAULT_SLIDESHOW_THRESHOLD,
+    SORT_KEY_RELEVANCE,
+    SORT_OPTIONS,
+    SORT_ORDER_ASC,
+    SORT_ORDER_DESC,
+    default_order_for,
+)
 
 from .common import sort_paths
 
@@ -860,8 +866,6 @@ def _history_to_messages(history: list, folder: str | bytes | None = None):
     if history is None or len(history) == 0:
         return []
 
-    from urllib.parse import quote
-
     messages = []
     for hist_idx, entry in enumerate(history):
         sender = entry.get("sender", "")
@@ -1541,9 +1545,7 @@ def register_gallery_sort_callback(app):
         State("input-folder", "value"),
         prevent_initial_call=True,
     )
-    def handle_gallery_sort(
-        sort_values, order_clicks, sort_ids, order_ids, order_labels, chat_history, folder
-    ):
+    def handle_gallery_sort(sort_values, order_clicks, sort_ids, order_ids, order_labels, chat_history, folder):
         n_grid = len(sort_ids) if sort_ids else 0
         no_update_grids = [dash.no_update] * n_grid
         n_order = len(order_ids) if order_ids else 0

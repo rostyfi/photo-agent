@@ -298,10 +298,7 @@ class SequentialProcessor:
                 completed = 0
                 total_in_folder = len(paths_to_process)
                 with ThreadPoolExecutor(max_workers=effective_concurrency) as pool:
-                    futures = {
-                        pool.submit(self._process_and_track, p, prompt, tracker): p
-                        for p in paths_to_process
-                    }
+                    futures = {pool.submit(self._process_and_track, p, prompt, tracker): p for p in paths_to_process}
                     for fut in as_completed(futures):
                         image_path = futures[fut]
                         try:

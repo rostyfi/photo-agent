@@ -30,8 +30,10 @@ class CountTool(BaseTool):
         """
         if not folder_path:
             return ChatResponse(
-                status="error", response="No folder specified. Please select a folder first.",
-                sender="assistant", model="N/A",
+                status="error",
+                response="No folder specified. Please select a folder first.",
+                sender="assistant",
+                model="N/A",
             )
         try:
             from src.sidecar.database.db import FeaturesDatabase
