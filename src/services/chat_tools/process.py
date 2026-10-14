@@ -16,6 +16,11 @@ class ProcessTool(BaseTool):
         help_text="/process - Processes photos in the current folder",
         usage="/process",
         requires_folder=True,
+        tool_description=(
+            "Start processing all pending photos in the current folder with the vision model; processing "
+            "runs in the background. Call only when the user explicitly asks to process their photos or "
+            "extract features. Requires a folder to be selected."
+        ),
     )
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:

@@ -352,6 +352,158 @@ class TestOllamaChatClient(unittest.TestCase):
         self.assertEqual([c.kind for c in chunks], ["response"])
         self.assertEqual(chunks[0].content, "Hi")
 
+    # --- native tool calling ---
+
+    def _capture_stream_payload(self, lines):
+        """Patch the session post for a streaming call and capture the payload."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.iter_lines.return_value = [s.encode() for s in lines]
+        captured = {}
+
+        def _post(url, json=None, **kwargs):
+            captured["payload"] = json
+            return mock_response
+
+        return captured, _post, mock_response
+
+    def test_chat_messages_sends_tools_and_parses_tool_calls(self):
+        response_json = {
+            "message": {
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "find", "arguments": {"description": "cats", "limit": 5}}},
+                    {"function": {"name": "count", "arguments": "{}"}},
+                ],
+            },
+            "done": True,
+        }
+        tools = [{"type": "function", "function": {"name": "find", "parameters": {}}}]
+        captured, _post, _ = self._capture_payload(response_json)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            reply = self.client.chat_messages([{"role": "user", "content": "hi"}], tools=tools, think=True)
+
+        self.assertEqual(captured["payload"]["tools"], tools)
+        self.assertTrue(captured["payload"].get("think"))
+        self.assertEqual(reply.content, "")
+        self.assertEqual(len(reply.tool_calls), 2)
+        self.assertEqual(reply.tool_calls[0].name, "find")
+        self.assertEqual(reply.tool_calls[0].arguments, {"description": "cats", "limit": 5})
+        self.assertEqual(reply.tool_calls[1].name, "count")
+        self.assertEqual(reply.tool_calls[1].arguments, {})
+
+    def test_chat_messages_without_tools_omits_tools_param(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "ok"}, "done": True})
+        with patch.object(self.client._session, "post", side_effect=_post):
+            reply = self.client.chat_messages([{"role": "user", "content": "hi"}])
+        self.assertNotIn("tools", captured["payload"])
+        self.assertEqual(reply.content, "ok")
+        self.assertEqual(reply.tool_calls, ())
+
+    def test_chat_messages_parses_string_arguments(self):
+        response_json = {
+            "message": {
+                "content": "",
+                "tool_calls": [{"function": {"name": "find", "arguments": '{"description": "cats"}'}}],
+            },
+            "done": True,
+        }
+        _, _post, _ = self._capture_payload(response_json)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            reply = self.client.chat_messages([{"role": "user", "content": "hi"}])
+        self.assertEqual(reply.tool_calls[0].arguments, {"description": "cats"})
+
+    def test_chat_messages_malformed_arguments_degrade_to_empty(self):
+        response_json = {
+            "message": {
+                "content": "",
+                "tool_calls": [{"function": {"name": "find", "arguments": '{"description": '}}],
+            },
+            "done": True,
+        }
+        _, _post, _ = self._capture_payload(response_json)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            reply = self.client.chat_messages([{"role": "user", "content": "hi"}])
+        self.assertEqual(reply.tool_calls[0].arguments, {})
+
+    def test_chat_messages_think_prefixes_system_message(self):
+        captured, _post, _ = self._capture_payload({"message": {"content": "ok"}, "done": True})
+        messages = [{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "hi"}]
+        with patch.object(self.client._session, "post", side_effect=_post):
+            self.client.chat_messages(messages, think=True)
+        system_msg = captured["payload"]["messages"][0]
+        self.assertEqual(system_msg["role"], "system")
+        self.assertTrue(system_msg["content"].startswith("<|think|>"))
+        self.assertIn("You are helpful.", system_msg["content"])
+
+    def test_chat_messages_stream_sends_tools_and_stream_flag(self):
+        lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+        captured, _post, _ = self._capture_stream_payload(lines)
+        tools = [{"type": "function", "function": {"name": "find"}}]
+        with patch.object(self.client._session, "post", side_effect=_post):
+            chunks = list(self.client.chat_messages_stream([{"role": "user", "content": "hi"}], tools=tools))
+        self.assertEqual(captured["payload"]["tools"], tools)
+        self.assertTrue(captured["payload"]["stream"])
+        self.assertEqual([c.kind for c in chunks], ["response"])
+
+    def test_chat_messages_stream_accumulates_tool_call_fragments(self):
+        lines = [
+            json.dumps(
+                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"desc'}}]}, "done": False}
+            ),
+            json.dumps(
+                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": 'ription": "cats"}'}}]},
+                 "done": False}
+            ),
+            json.dumps({"message": {"content": ""}, "done": True}),
+        ]
+        _, _post, _ = self._capture_stream_payload(lines)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            chunks = list(self.client.chat_messages_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual([c.kind for c in chunks], ["tool_calls"])
+        self.assertEqual(chunks[0].tool_calls[0].name, "find")
+        self.assertEqual(chunks[0].tool_calls[0].arguments, {"description": "cats"})
+
+    def test_chat_messages_stream_full_so_far_fragments(self):
+        # Some Ollama versions repeat the complete arguments on every chunk;
+        # the last fragment is used when the concatenation does not parse.
+        lines = [
+            json.dumps(
+                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "ca'}}]},
+                 "done": False}
+            ),
+            json.dumps(
+                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "cats"}'}}]},
+                 "done": False}
+            ),
+            json.dumps({"message": {"content": ""}, "done": True}),
+        ]
+        _, _post, _ = self._capture_stream_payload(lines)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            chunks = list(self.client.chat_messages_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(chunks[0].tool_calls[0].arguments, {"description": "cats"})
+
+    def test_chat_messages_stream_multiple_tool_calls(self):
+        lines = [
+            json.dumps(
+                {
+                    "message": {
+                        "tool_calls": [
+                            {"function": {"name": "count", "arguments": "{}"}},
+                            {"function": {"name": "find", "arguments": '{"description": "cats"}'}},
+                        ]
+                    },
+                    "done": True,
+                }
+            ),
+        ]
+        _, _post, _ = self._capture_stream_payload(lines)
+        with patch.object(self.client._session, "post", side_effect=_post):
+            chunks = list(self.client.chat_messages_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual([c.kind for c in chunks], ["tool_calls"])
+        self.assertEqual([c.name for c in chunks[0].tool_calls], ["count", "find"])
+        self.assertEqual(chunks[0].tool_calls[1].arguments, {"description": "cats"})
+
 
 if __name__ == "__main__":
     unittest.main()

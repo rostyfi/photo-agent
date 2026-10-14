@@ -383,10 +383,11 @@ def register_chat_stream_callback(app):
 
     This replaces the blocking server-side callback with a browser-side
     fetch to the /_api/chat/stream SSE endpoint. Tokens are appended to
-    the chat window incrementally as they arrive from the LLM. When the
-    stream completes, dash_clientside.set_props updates the history and
-    photo-list stores so that init_chat_history re-renders the final
-    formatted message.
+    the chat window incrementally as they arrive from the LLM. Tools the
+    LLM invokes implicitly (native tool calling) surface as ``tool`` events
+    shown as "Running <name>…". When the stream completes,
+    dash_clientside.set_props updates the history and photo-list stores so
+    that init_chat_history re-renders the final formatted message.
     """
     app.clientside_callback(
         """
@@ -506,6 +507,7 @@ def register_chat_stream_callback(app):
             var finalThinking = null;
             var responseType = null;
             var sender = 'assistant';
+            var toolsCalled = [];
 
             var controller = new AbortController();
             window._chatStreamController = controller;
@@ -549,12 +551,20 @@ def register_chat_stream_callback(app):
                                             }
                                             scrollChat();
                                         }
+                                    } else if (evt.type === 'tool') {
+                                        // The LLM invoked a tool implicitly (native
+                                        // tool calling); show what is running.
+                                        if (textSpan) {
+                                            textSpan.textContent = 'Running ' + (evt.name || 'tool') + '…';
+                                            scrollChat();
+                                        }
                                     } else if (evt.type === 'done') {
                                         model = evt.model || model;
                                         responseType = evt.response_type || responseType;
                                         sender = evt.sender || sender;
                                         finalResponse = evt.response;
                                         finalThinking = evt.thinking || (thinkingText || null);
+                                        toolsCalled = evt.tools_called || [];
                                     } else if (evt.type === 'error') {
                                         fullText = '';
                                         finalResponse = evt.message || 'Error';
@@ -654,6 +664,7 @@ def register_chat_stream_callback(app):
                 var respText = (typeof finalResponse === 'string') ? finalResponse : '';
                 var shouldPollProgress = (
                     sentMsg === '/process' || sentMsg === '/status' ||
+                    toolsCalled.indexOf('process') !== -1 || toolsCalled.indexOf('status') !== -1 ||
                     /processing (has started|started for)/i.test(respText) ||
                     /batch status for/i.test(respText)
                 );

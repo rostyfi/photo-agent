@@ -118,6 +118,33 @@ class BasePhotoExtractor(ABC):
         ...
 
 
+class ToolCall(NamedTuple):
+    """A single tool invocation requested by the LLM.
+
+    Attributes:
+        name: The tool function name (e.g. ``find`` for the ``/find`` tool).
+        arguments: The parsed JSON arguments as a dict.
+    """
+
+    name: str
+    arguments: dict
+
+
+class ChatReply(NamedTuple):
+    """Structured reply from a chat client that supports native tool calling.
+
+    Attributes:
+        content: The assistant's text answer (may be empty when the model
+            only requested tool calls).
+        thinking: The model's reasoning trace, when requested and supported.
+        tool_calls: Tool invocations requested by the model, in call order.
+    """
+
+    content: str
+    thinking: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+
+
 class LLMChatClient(ABC):
     """Abstract interface for pluggable LLM chat clients.
 
@@ -146,6 +173,61 @@ class LLMChatClient(ABC):
         self.model = model
         self.timeout = timeout
         self.base_url = f"http://{self.host}:{self.port}"
+
+    @staticmethod
+    def build_messages(
+        message: str,
+        system_prompt: str | None = None,
+        history: list | None = None,
+    ) -> list[dict]:
+        """Build a ``messages`` array from a user message and web-UI history.
+
+        Converts the chat history (entries with ``sender``/``content``/``type``
+        fields from the web UI) into chat messages with ``role`` and
+        ``content`` fields, then appends the current user message. Non-text
+        entries are summarised so the model gets useful context without raw
+        photo paths or error stack traces.
+
+        Args:
+            message: The current user message/prompt.
+            system_prompt: Optional system prompt; prepended as a system message.
+            history: Optional chat history from the web UI.
+
+        Returns:
+            A list of ``{"role": ..., "content": ...}`` dicts.
+        """
+        messages: list[dict] = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        if history:
+            for entry in history:
+                sender = entry.get("sender", "")
+                content = entry.get("content", "")
+                entry_type = entry.get("type", "text")
+
+                # Map web UI sender to chat role.
+                role = "assistant" if sender == "assistant" else "user"
+
+                # Summarise non-text entries so the model gets useful context
+                # without raw photo paths or error stack traces.
+                if entry_type == "photos":
+                    photo_paths = entry.get("photo_paths", [])
+                    count = entry.get("count", len(photo_paths))
+                    text = f"Found {count} matching photos"
+                elif entry_type == "error":
+                    text = f"Error - {content}"
+                elif entry_type == "loading":
+                    continue  # skip loading placeholders
+                else:
+                    text = str(content)
+
+                if text:
+                    messages.append({"role": role, "content": text})
+
+        messages.append({"role": "user", "content": message})
+        return messages
 
     @abstractmethod
     def chat(
@@ -197,6 +279,75 @@ class LLMChatClient(ABC):
             A ``(response_text, thinking_text_or_None)`` tuple.
         """
         return self.chat(message, system_prompt=system_prompt, history=history, think=think), None
+
+    def chat_messages(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        think: bool = False,
+    ) -> ChatReply:
+        """Send a raw message list, optionally with tool definitions.
+
+        This is the primitive behind native tool calling: ``messages`` may
+        include prior assistant tool calls and ``role="tool"`` results, and
+        ``tools`` carries tool specifications (e.g. Ollama ``tools`` format).
+        The reply reports both the text answer and any requested tool calls,
+        so the caller can execute them and continue the conversation.
+
+        The default implementation ignores tool definitions and delegates to
+        :meth:`chat` with the last user message and the first system message,
+        so backends without native tool support degrade to plain chat.
+
+        Args:
+            messages: Chat messages (``{"role": ..., "content": ...}`` dicts).
+            tools: Optional tool specifications to offer the model.
+            think: When True, request the model's reasoning trace.
+
+        Returns:
+            A :class:`ChatReply` with content, thinking, and tool calls.
+        """
+        user_message = ""
+        system_prompt = None
+        for msg in messages:
+            if msg.get("role") == "user":
+                user_message = msg.get("content", "")
+            elif msg.get("role") == "system" and system_prompt is None:
+                system_prompt = msg.get("content")
+        content = self.chat(user_message, system_prompt=system_prompt, think=think)
+        return ChatReply(content=content)
+
+    def chat_messages_stream(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        think: bool = False,
+    ) -> Generator["ChatStreamChunk", None, None]:
+        """Stream a reply to a raw message list, optionally with tool definitions.
+
+        Like :meth:`chat_messages` but yields :class:`ChatStreamChunk`
+        instances; tool invocations requested by the model arrive as a final
+        ``"tool_calls"`` chunk.
+
+        The default implementation ignores tool definitions and delegates to
+        :meth:`chat_stream_events` with the last user message and the first
+        system message.
+
+        Args:
+            messages: Chat messages (``{"role": ..., "content": ...}`` dicts).
+            tools: Optional tool specifications to offer the model.
+            think: When True, request the model's reasoning trace.
+
+        Yields:
+            :class:`ChatStreamChunk` instances.
+        """
+        user_message = ""
+        system_prompt = None
+        for msg in messages:
+            if msg.get("role") == "user":
+                user_message = msg.get("content", "")
+            elif msg.get("role") == "system" and system_prompt is None:
+                system_prompt = msg.get("content")
+        yield from self.chat_stream_events(user_message, system_prompt=system_prompt, think=think)
 
     def chat_stream(
         self,
@@ -265,21 +416,27 @@ class ChatStreamChunk(NamedTuple):
     Attributes:
         kind: ``"response"`` for final-answer text, ``"thinking"`` for the
             model's reasoning trace (only emitted when ``think`` is requested
-            and the backend supports it).
-        content: The incremental text for this chunk.
+            and the backend supports it), or ``"tool_calls"`` when the model
+            requested tool invocations (carried in ``tool_calls``).
+        content: The incremental text for this chunk (empty for tool calls).
+        tool_calls: Complete tool invocations; present only on ``"tool_calls"``
+            chunks.
     """
 
     kind: str
     content: str
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
 # Public API exports
 __all__ = [
     "DEFAULT_PROMPT",
     "BasePhotoExtractor",
+    "ChatReply",
     "ChatStreamChunk",
     "ErrorCode",
     "LLMChatClient",
     "ProcessingResult",
+    "ToolCall",
     "make_error_result",
 ]

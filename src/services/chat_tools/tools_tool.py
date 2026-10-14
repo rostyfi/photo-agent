@@ -19,6 +19,7 @@ class ToolsTool(BaseTool):
         help_text="/tools - Lists available tools",
         usage="/tools",
         requires_folder=False,
+        tool_description="List the available tools and what they do.",
     )
 
     def __init__(self, config, all_tools: dict[str, "BaseToolType"] | None = None):

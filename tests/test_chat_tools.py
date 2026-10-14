@@ -1164,11 +1164,11 @@ class TestChatService:
         assert "Local Photo Agent" in prompt
         assert "RULE 1" in prompt
         assert "RULE 2" in prompt
-        assert "AVAILABLE TOOL COMMANDS" in prompt
-        assert "/about" in prompt
-        assert "/tools" in prompt
-        assert "/count" in prompt
-        assert "/find" in prompt
+        assert "call that tool" in prompt
+        assert "ROUTING RULES" in prompt
+        assert "find" in prompt
+        assert "tag" in prompt
+        assert "count" in prompt
 
     def test_system_prompt_includes_think_rule_when_debug_reasoning(self):
         """RULE 0 (thinking instruction) is present only when debug_reasoning is on."""
@@ -1327,14 +1327,19 @@ class TestChatService:
         assert response.model == "unknown"
         assert response.response_type is None
         assert response.thinking is None
+        assert response.tools_called is None
+
+        # Tools the LLM invoked implicitly (native tool calling)
+        response = ChatResponse(status="success", response="done", tools_called=["count", "tag"])
+        assert response.tools_called == ["count", "tag"]
 
     def test_process_message_stream_emits_thinking_when_debug_reasoning(self):
         """ChatService streams 'thinking' events when debug_reasoning is enabled."""
         from src.config import AppConfig
-        from src.interfaces import ChatStreamChunk
+        from src.interfaces import ChatStreamChunk, LLMChatClient
         from src.services.chat import ChatService
 
-        class FakeChatClient:
+        class FakeChatClient(LLMChatClient):
             model = "test-model"
 
             def chat_stream_events(self, message, system_prompt=None, history=None, think=False):
@@ -1344,6 +1349,9 @@ class TestChatService:
 
             def chat(self, message, system_prompt=None, history=None, think=False):
                 return "answer"
+
+            def health_check(self):
+                return True
 
         config = AppConfig(
             llm_host="localhost",
@@ -1367,10 +1375,10 @@ class TestChatService:
     def test_process_message_stream_no_thinking_when_debug_reasoning_off(self):
         """No 'thinking' events when debug_reasoning is disabled."""
         from src.config import AppConfig
-        from src.interfaces import ChatStreamChunk
+        from src.interfaces import ChatStreamChunk, LLMChatClient
         from src.services.chat import ChatService
 
-        class FakeChatClient:
+        class FakeChatClient(LLMChatClient):
             model = "test-model"
 
             def chat_stream_events(self, message, system_prompt=None, history=None, think=False):
@@ -1379,6 +1387,9 @@ class TestChatService:
 
             def chat(self, message, system_prompt=None, history=None, think=False):
                 return "answer"
+
+            def health_check(self):
+                return True
 
         config = AppConfig(
             llm_host="localhost",
@@ -1395,6 +1406,623 @@ class TestChatService:
         assert "thinking" not in [e["type"] for e in events]
         done = [e for e in events if e["type"] == "done"][0]
         assert done["thinking"] is None
+
+
+from src.interfaces import ChatReply, ChatStreamChunk, LLMChatClient, ToolCall
+
+
+class _StaticChatClient(LLMChatClient):
+    """Fake LLM chat client returning a fixed text response."""
+
+    model = "test-model"
+
+    def __init__(self, response: str):
+        self._response = response
+
+    def chat(self, message, system_prompt=None, history=None, think=False):
+        return self._response
+
+    def health_check(self):
+        return True
+
+
+class _StreamingChatClient(LLMChatClient):
+    """Fake LLM chat client streaming fixed response chunks."""
+
+    model = "test-model"
+
+    def __init__(self, chunks: list):
+        self._chunks = chunks
+
+    def chat(self, message, system_prompt=None, history=None, think=False):
+        return "".join(self._chunks)
+
+    def chat_stream_events(self, message, system_prompt=None, history=None, think=False):
+        for chunk in self._chunks:
+            yield ChatStreamChunk(kind="response", content=chunk)
+
+    def health_check(self):
+        return True
+
+
+class _ScriptedChatClient(LLMChatClient):
+    """Fake LLM chat client returning scripted ChatReply turns."""
+
+    model = "test-model"
+
+    def __init__(self, replies: list):
+        self._replies = list(replies)
+        self.calls: list[dict] = []
+
+    def chat(self, message, system_prompt=None, history=None, think=False):
+        return self._replies.pop(0).content if self._replies else ""
+
+    def chat_messages(self, messages, tools=None, think=False):
+        self.calls.append({"messages": list(messages), "tools": tools, "think": think})
+        if not self._replies:
+            return ChatReply(content="")
+        return self._replies.pop(0)
+
+    def health_check(self):
+        return True
+
+
+class _ScriptedStreamClient(LLMChatClient):
+    """Fake LLM chat client streaming scripted chunk sequences per turn."""
+
+    model = "test-model"
+
+    def __init__(self, turns: list):
+        self._turns = [list(turn) for turn in turns]
+        self.calls: list[dict] = []
+
+    def chat(self, message, system_prompt=None, history=None, think=False):
+        return ""
+
+    def chat_messages_stream(self, messages, tools=None, think=False):
+        self.calls.append({"messages": list(messages), "tools": tools, "think": think})
+        chunks = self._turns.pop(0) if self._turns else []
+        yield from chunks
+
+    def health_check(self):
+        return True
+
+
+class TestToolCommandRouting:
+    """Tests for robust tool-command matching and LLM response routing.
+
+    The system prompt asks the LLM to answer with exactly one tool command,
+    but real models wrap the command in quotes/backticks, add trailing
+    punctuation, or prepend prose. ChatService must still route those replies
+    to the tool instead of showing the raw command text to the user.
+    """
+
+    @staticmethod
+    def _make_service(chat_client=None) -> "ChatService":
+        from src.config import AppConfig
+        from src.services.chat import ChatService
+
+        config = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+        )
+        return ChatService(config, chat_client=chat_client)
+
+    # --- _normalize_tool_command ---
+
+    def test_normalize_exact_command(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("/about") == "/about"
+        assert service._normalize_tool_command("/scan") == "/scan"
+
+    def test_normalize_command_with_args(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("/find 5 cats") == "/find 5 cats"
+        assert service._normalize_tool_command("/tag Nature") == "/tag Nature"
+
+    def test_normalize_keyword_case_preserves_arg_case(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("/FIND 5 Cats") == "/find 5 Cats"
+        assert service._normalize_tool_command("/Tags sport") == "/tags sport"
+
+    def test_normalize_strips_wrappers_and_punctuation(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("`/scan`") == "/scan"
+        assert service._normalize_tool_command('"/count"') == "/count"
+        assert service._normalize_tool_command("**/status**") == "/status"
+        assert service._normalize_tool_command("/scan.") == "/scan"
+        assert service._normalize_tool_command("```/about```") == "/about"
+        assert service._normalize_tool_command("/find cats.") == "/find cats"
+
+    def test_normalize_rejects_non_commands(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("hello there") is None
+        assert service._normalize_tool_command("/unknown") is None
+        assert service._normalize_tool_command("find cats") is None
+
+    def test_normalize_rejects_command_prefix_collisions(self):
+        service = self._make_service()
+        # /tags must not swallow longer words starting with /tag, and the
+        # matcher must not treat /finder or /tagging as commands.
+        assert service._normalize_tool_command("/tagsxyz") is None
+        assert service._normalize_tool_command("/tagsport") is None
+        assert service._normalize_tool_command("/finder cats") is None
+        assert service._normalize_tool_command("/tagging sport") is None
+
+    def test_normalize_disambiguates_tags_and_tag(self):
+        service = self._make_service()
+        assert service._normalize_tool_command("/tags") == "/tags"
+        assert service._normalize_tool_command("/tags sport") == "/tags sport"
+        assert service._normalize_tool_command("/tag nature") == "/tag nature"
+        assert service._normalize_tool_command("/tag") == "/tag"
+
+    # --- _extract_tool_command ---
+
+    def test_extract_from_noisy_llm_responses(self):
+        service = self._make_service()
+        assert service._extract_tool_command('"/find cats"') == "/find cats"
+        assert service._extract_tool_command("`/find cats`") == "/find cats"
+        assert service._extract_tool_command("**/scan**") == "/scan"
+        assert service._extract_tool_command("/scan.") == "/scan"
+        assert service._extract_tool_command("```/find 5 cats```") == "/find 5 cats"
+        assert service._extract_tool_command("Sure!\n/find cats") == "/find cats"
+        assert service._extract_tool_command("Here you go:\n\n`/find cats`") == "/find cats"
+        assert service._extract_tool_command("Sure! /find cats") == "/find cats"
+        assert service._extract_tool_command("OK: /tag Nature.") == "/tag Nature"
+        assert service._extract_tool_command("/FIND 5 Cats") == "/find 5 Cats"
+
+    def test_extract_ignores_helpful_answers_mentioning_commands(self):
+        service = self._make_service()
+        assert service._extract_tool_command("You can use /scan to list photos.") is None
+        assert service._extract_tool_command("Try `/find cats` or `/tags animals`.") is None
+        assert service._extract_tool_command("I can search photos for you.") is None
+
+    def test_extract_none_for_empty_response(self):
+        service = self._make_service()
+        assert service._extract_tool_command("") is None
+        assert service._extract_tool_command("   ") is None
+
+    # --- handle_tool_command ---
+
+    def test_handle_tool_command_rejects_prefix_collision(self):
+        service = self._make_service()
+        result = service.handle_tool_command("/tagsxyz", folder_path=None)
+        assert result.status == "error"
+        assert "Unknown command" in result.response
+
+    def test_handle_tool_command_normalises_keyword_case(self):
+        service = self._make_service()
+        result = service.handle_tool_command("/ABOUT", folder_path=None)
+        assert result.status == "success"
+        assert "Local Photo Agent" in result.response
+
+    def test_handle_tool_command_preserves_argument_case(self, tmp_path):
+        # Tag names are case-sensitive; the keyword is normalised but the
+        # argument must reach the tool verbatim.
+        service = self._make_service()
+        captured = {}
+
+        tag_tool = service._tools["/tag"]
+        original_execute = tag_tool.execute
+
+        def spy_execute(folder_path=None, args=None):
+            captured["args"] = args
+            return original_execute(folder_path, args)
+
+        tag_tool.execute = spy_execute
+        service.handle_tool_command("/TAG Nature", folder_path=str(tmp_path))
+        assert captured["args"] == "Nature"
+
+    # --- process_message routing ---
+
+    def test_process_message_routes_llm_command_wrapped_in_quotes(self):
+        service = self._make_service(chat_client=_StaticChatClient('"/about"'))
+        result = service.process_message("who are you")
+        assert result.status == "success"
+        assert "Local Photo Agent" in result.response
+
+    def test_process_message_routes_llm_command_with_prose(self):
+        service = self._make_service(chat_client=_StaticChatClient("Sure! /about"))
+        result = service.process_message("who are you")
+        assert result.status == "success"
+        assert "Local Photo Agent" in result.response
+
+    def test_process_message_llm_command_without_folder_returns_tool_error(self):
+        # The tool's own validation error must surface instead of the raw
+        # command text being shown to the user.
+        service = self._make_service(chat_client=_StaticChatClient("/find cats"))
+        result = service.process_message("show me cats", folder_path=None)
+        assert result.status == "error"
+        assert "No folder specified" in result.response
+
+    def test_process_message_llm_command_routes_to_tool_with_folder(self, tmp_path):
+        from src.sidecar.database import FeaturesDatabase
+
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.init_db()
+        db.close()
+
+        service = self._make_service(chat_client=_StaticChatClient("`/count`"))
+        result = service.process_message("how many photos are processed?", folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "Processed Photos" in result.response
+
+    def test_process_message_passes_through_regular_response(self):
+        service = self._make_service(chat_client=_StaticChatClient("I am a helpful assistant."))
+        result = service.process_message("hello")
+        assert result.status == "success"
+        assert result.response == "I am a helpful assistant."
+
+    def test_process_message_direct_command_with_trailing_punctuation(self, tmp_path):
+        service = self._make_service()
+        result = service.process_message("/scan.", folder_path=str(tmp_path))
+        assert result.status == "success"
+        assert "Total photos found" in result.response
+
+    # --- process_message_stream routing ---
+
+    def test_process_message_stream_routes_noisy_llm_command(self):
+        service = self._make_service(chat_client=_StreamingChatClient(['"', "/about", '"']))
+        events = list(service.process_message_stream("who are you"))
+        types = [e["type"] for e in events]
+        assert "done" in types
+        done = [e for e in events if e["type"] == "done"][0]
+        assert "Local Photo Agent" in done["response"]
+
+    def test_process_message_stream_command_without_folder_returns_tool_error(self):
+        service = self._make_service(chat_client=_StreamingChatClient(["/find cats"]))
+        events = list(service.process_message_stream("show me cats"))
+        done = [e for e in events if e["type"] == "done"][0]
+        assert done["status"] == "error"
+        assert "No folder specified" in done["response"]
+
+    def test_process_message_stream_direct_command_single_done_event(self):
+        service = self._make_service()
+        events = list(service.process_message_stream("/about"))
+        assert len(events) == 1
+        assert events[0]["type"] == "done"
+        assert "Local Photo Agent" in events[0]["response"]
+
+
+class TestNativeToolCalling:
+    """Tests for implicit tool use via native LLM tool calling.
+
+    The LLM receives the tool specifications, invokes tools on its own from
+    natural language, and tool results are fed back so it can compose the
+    final answer. Structured results (galleries, tag chips) are returned to
+    the user directly, exactly as with slash commands.
+    """
+
+    @staticmethod
+    def _make_service(chat_client=None, **config_kwargs) -> "ChatService":
+        from src.config import AppConfig
+        from src.services.chat import ChatService
+
+        config = AppConfig(
+            llm_host="localhost",
+            llm_port=11434,
+            llm_model="test",
+            llm_backend="dry_run",
+            embedding_backend="dry_run",
+            embedding_model="test",
+            **config_kwargs,
+        )
+        return ChatService(config, chat_client=chat_client)
+
+    @staticmethod
+    def _db_with_tagged_photo(tmp_path):
+        from src.sidecar.database import FeaturesDatabase
+
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.save_extraction(
+            "/photos/a.jpg",
+            {"success": True, "parsed": {"description": "beach at sunset", "tags": ["nature", "sunset"]}},
+        )
+        db.close()
+
+    # --- tool specifications ---
+
+    def test_get_tool_specs_covers_all_tools(self):
+        service = self._make_service()
+        specs = service._get_tool_specs()
+        names = {s["function"]["name"] for s in specs}
+        assert names == {"about", "count", "find", "process", "scan", "status", "tags", "tag", "tools"}
+        for spec in specs:
+            assert spec["type"] == "function"
+            assert spec["function"]["description"]
+            assert spec["function"]["parameters"]["type"] == "object"
+
+    def test_find_tool_spec_schema(self):
+        service = self._make_service()
+        spec = next(s for s in service._get_tool_specs() if s["function"]["name"] == "find")
+        params = spec["function"]["parameters"]
+        assert params["required"] == ["description"]
+        assert set(params["properties"]) == {"description", "limit", "date"}
+
+    def test_tag_tool_spec_requires_tag_argument(self):
+        service = self._make_service()
+        spec = next(s for s in service._get_tool_specs() if s["function"]["name"] == "tag")
+        assert spec["function"]["parameters"]["required"] == ["tag"]
+
+    def test_folder_requiring_tools_mention_folder_in_description(self):
+        service = self._make_service()
+        specs = {s["function"]["name"]: s for s in service._get_tool_specs()}
+        for name in ("find", "count", "process", "scan", "tags", "tag"):
+            assert "folder" in specs[name]["function"]["description"].lower(), name
+
+    # --- command_from_arguments ---
+
+    def test_find_command_from_arguments(self):
+        from src.config import AppConfig
+        from src.services.chat_tools.find import FindTool
+
+        tool = FindTool(AppConfig(llm_host="localhost", llm_port=11434, llm_model="test"))
+        assert tool.command_from_arguments({"description": "cats"}) == "/find cats"
+        assert tool.command_from_arguments({"description": "cats", "limit": 5}) == "/find 5 cats"
+        assert tool.command_from_arguments({"description": "cats", "limit": "7"}) == "/find 7 cats"
+        assert (
+            tool.command_from_arguments({"description": "cats", "limit": 5, "date": "last summer"})
+            == "/find 5 cats @last summer"
+        )
+        # Missing description falls back to the bare command so execute() reports it
+        assert tool.command_from_arguments({}) == "/find"
+        assert tool.command_from_arguments(None) == "/find"
+
+    def test_tags_command_from_arguments(self):
+        from src.config import AppConfig
+        from src.services.chat_tools.tags import TagsTool
+
+        tool = TagsTool(AppConfig(llm_host="localhost", llm_port=11434, llm_model="test"))
+        assert tool.command_from_arguments({"topic": "sport"}) == "/tags sport"
+        assert tool.command_from_arguments({}) == "/tags"
+        assert tool.command_from_arguments(None) == "/tags"
+
+    def test_tag_command_from_arguments_preserves_case(self):
+        from src.config import AppConfig
+        from src.services.chat_tools.tags import TagTool
+
+        tool = TagTool(AppConfig(llm_host="localhost", llm_port=11434, llm_model="test"))
+        assert tool.command_from_arguments({"tag": "Nature"}) == "/tag Nature"
+        assert tool.command_from_arguments({}) == "/tag"
+
+    def test_no_arg_tool_command_from_arguments(self):
+        from src.config import AppConfig
+        from src.services.chat_tools.about import AboutTool
+
+        tool = AboutTool(AppConfig(llm_host="localhost", llm_port=11434, llm_model="test"))
+        assert tool.command_from_arguments({"anything": 1}) == "/about"
+
+    def test_execute_tool_calls_maps_arguments_to_command(self):
+        service = self._make_service()
+        captured = []
+        original = service.handle_tool_command
+
+        def spy(command, folder_path=None):
+            captured.append(command)
+            return original(command, folder_path)
+
+        service.handle_tool_command = spy
+        service._execute_tool_calls(
+            (ToolCall("find", {"description": "cats", "limit": 5, "date": "last summer"}),),
+            folder_path="/x",
+        )
+        assert captured == ["/find 5 cats @last summer"]
+
+    # --- process_message tool-calling loop ---
+
+    def test_process_message_sends_tools_and_returns_text_answer(self):
+        client = _ScriptedChatClient([ChatReply(content="You have 5 photos.")])
+        service = self._make_service(chat_client=client)
+        result = service.process_message("how many photos?", folder_path="/x")
+
+        assert result.status == "success"
+        assert result.response == "You have 5 photos."
+        assert result.tools_called is None
+
+        assert len(client.calls) == 1
+        call = client.calls[0]
+        tool_names = {t["function"]["name"] for t in call["tools"]}
+        assert "count" in tool_names
+        roles = [m["role"] for m in call["messages"]]
+        assert roles == ["system", "user"]
+
+    def test_process_message_executes_tool_call_and_feeds_result_back(self, tmp_path):
+        from src.sidecar.database import FeaturesDatabase
+
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.init_db()
+        db.save_extraction("/photos/a.jpg", {"success": True, "parsed": {"description": "cat"}})
+        db.close()
+
+        client = _ScriptedChatClient(
+            [
+                ChatReply(content="", tool_calls=(ToolCall("count", {}),)),
+                ChatReply(content="There are 1 processed photo."),
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        result = service.process_message("how many photos are processed?", folder_path=str(tmp_path))
+
+        assert result.status == "success"
+        assert result.response == "There are 1 processed photo."
+        assert result.tools_called == ["count"]
+        assert len(client.calls) == 2
+
+        # The second call carries the tool exchange for the model to answer from.
+        msgs = client.calls[1]["messages"]
+        assert [m["role"] for m in msgs] == ["system", "user", "assistant", "tool"]
+        assert msgs[2]["tool_calls"][0]["function"]["name"] == "count"
+        assert msgs[2]["tool_calls"][0]["function"]["arguments"] == {}
+        assert msgs[3]["name"] == "count"
+        assert "1" in msgs[3]["content"]
+
+    def test_process_message_short_circuits_structured_result(self, tmp_path):
+        self._db_with_tagged_photo(tmp_path)
+
+        client = _ScriptedChatClient(
+            [
+                ChatReply(content="", tool_calls=(ToolCall("tag", {"tag": "nature"}),)),
+                ChatReply(content="should not be reached"),
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        result = service.process_message("show me photos with the nature tag", folder_path=str(tmp_path))
+
+        # The gallery result is returned directly; the model is not called again.
+        assert result.response_type == "photos_and_tags"
+        assert result.tools_called == ["tag"]
+        assert len(client.calls) == 1
+        paths = {p["path"] for p in result.response["photos"]}
+        assert paths == {"/photos/a.jpg"}
+
+    def test_process_message_short_circuits_second_of_multiple_calls(self, tmp_path):
+        self._db_with_tagged_photo(tmp_path)
+
+        client = _ScriptedChatClient(
+            [
+                ChatReply(content="", tool_calls=(ToolCall("count", {}), ToolCall("tag", {"tag": "nature"}))),
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        result = service.process_message("count and show the nature tag", folder_path=str(tmp_path))
+
+        assert result.response_type == "photos_and_tags"
+        assert result.tools_called == ["count", "tag"]
+        assert len(client.calls) == 1
+
+    def test_process_message_feeds_tool_error_back_to_model(self):
+        client = _ScriptedChatClient(
+            [
+                ChatReply(content="", tool_calls=(ToolCall("find", {"description": "cats"}),)),
+                ChatReply(content="Please select a folder first."),
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        result = service.process_message("show me cats", folder_path=None)
+
+        assert result.status == "success"
+        assert result.response == "Please select a folder first."
+        tool_msg = client.calls[1]["messages"][3]
+        assert tool_msg["role"] == "tool"
+        assert "No folder specified" in tool_msg["content"]
+
+    def test_process_message_reports_unknown_tool_function(self):
+        client = _ScriptedChatClient(
+            [
+                ChatReply(content="", tool_calls=(ToolCall("bogus", {}),)),
+                ChatReply(content="Sorry, I cannot do that."),
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        result = service.process_message("do something weird")
+
+        assert result.status == "success"
+        assert result.response == "Sorry, I cannot do that."
+        assert "Unknown tool: bogus" in client.calls[1]["messages"][3]["content"]
+
+    def test_process_message_max_tool_turns_guard(self):
+        client = _ScriptedChatClient([ChatReply(content="", tool_calls=(ToolCall("about", {}),))] * 10)
+        service = self._make_service(chat_client=client)
+        result = service.process_message("loop forever")
+
+        assert result.status == "error"
+        assert "did not finish" in result.response
+        assert len(client.calls) == 6  # _MAX_TOOL_TURNS + 1
+
+    def test_process_message_keeps_text_command_fallback(self):
+        # A model that emits a slash command as text instead of calling the
+        # tool still gets routed (safety net for models without reliable
+        # tool-calling support).
+        client = _ScriptedChatClient([ChatReply(content='"/about"')])
+        service = self._make_service(chat_client=client)
+        result = service.process_message("who are you")
+
+        assert result.status == "success"
+        assert "Local Photo Agent" in result.response
+
+    # --- process_message_stream tool-calling loop ---
+
+    def test_process_message_stream_executes_tool_calls_and_streams_answer(self, tmp_path):
+        from src.sidecar.database import FeaturesDatabase
+
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(str(tmp_path)))
+        db.init_db()
+        db.save_extraction("/photos/a.jpg", {"success": True, "parsed": {"description": "cat"}})
+        db.close()
+
+        client = _ScriptedStreamClient(
+            [
+                [ChatStreamChunk(kind="tool_calls", content="", tool_calls=(ToolCall("count", {}),))],
+                [
+                    ChatStreamChunk(kind="response", content="There are "),
+                    ChatStreamChunk(kind="response", content="1 photo."),
+                ],
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        events = list(service.process_message_stream("how many?", folder_path=str(tmp_path)))
+
+        assert [e["type"] for e in events] == ["tool", "token", "token", "done"]
+        assert events[0]["name"] == "count"
+        done = events[-1]
+        assert done["response"] == "There are 1 photo."
+        assert done["tools_called"] == ["count"]
+        assert len(client.calls) == 2
+
+    def test_process_message_stream_short_circuits_structured_result(self, tmp_path):
+        self._db_with_tagged_photo(tmp_path)
+
+        client = _ScriptedStreamClient(
+            [
+                [ChatStreamChunk(kind="tool_calls", content="", tool_calls=(ToolCall("tag", {"tag": "nature"}),))],
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        events = list(service.process_message_stream("nature photos", folder_path=str(tmp_path)))
+
+        assert [e["type"] for e in events] == ["tool", "done"]
+        done = events[-1]
+        assert done["response_type"] == "photos_and_tags"
+        assert done["tools_called"] == ["tag"]
+        assert len(client.calls) == 1
+
+    def test_process_message_stream_thinking_events_with_tool_turn(self):
+        client = _ScriptedStreamClient(
+            [
+                [
+                    ChatStreamChunk(kind="thinking", content="hmm"),
+                    ChatStreamChunk(kind="tool_calls", content="", tool_calls=(ToolCall("about", {}),)),
+                ],
+                [ChatStreamChunk(kind="response", content="I am the agent.")],
+            ]
+        )
+        service = self._make_service(chat_client=client, debug_reasoning=True)
+        events = list(service.process_message_stream("who are you"))
+
+        types = [e["type"] for e in events]
+        assert types == ["thinking", "tool", "token", "done"]
+        done = events[-1]
+        assert done["response"] == "I am the agent."
+        assert done["thinking"] == "hmm"
+        assert done["tools_called"] == ["about"]
+
+    def test_process_message_stream_sends_tools_on_every_turn(self, tmp_path):
+        self._db_with_tagged_photo(tmp_path)
+        client = _ScriptedStreamClient(
+            [
+                [ChatStreamChunk(kind="tool_calls", content="", tool_calls=(ToolCall("tag", {"tag": "nature"}),))],
+            ]
+        )
+        service = self._make_service(chat_client=client)
+        list(service.process_message_stream("nature photos", folder_path=str(tmp_path)))
+
+        assert client.calls[0]["tools"]
+        tool_names = {t["function"]["name"] for t in client.calls[0]["tools"]}
+        assert "tag" in tool_names
 
 
 if __name__ == "__main__":

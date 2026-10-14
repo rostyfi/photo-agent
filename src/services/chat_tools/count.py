@@ -14,6 +14,10 @@ class CountTool(BaseTool):
         help_text="/count - Shows number of processed photos",
         usage="/count",
         requires_folder=True,
+        tool_description=(
+            "Count the photos in the current folder: how many are processed and how many are pending. "
+            "Requires a folder to be selected."
+        ),
     )
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:

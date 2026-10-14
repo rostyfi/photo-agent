@@ -15,6 +15,9 @@ class AboutTool(BaseTool):
         help_text="/about - Shows information about the agent",
         usage="/about",
         requires_folder=False,
+        tool_description=(
+            "Show information about the Local Photo Agent: what it is, its version, and its capabilities."
+        ),
     )
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:

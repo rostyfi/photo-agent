@@ -76,6 +76,9 @@ def api_chat_handler(config: AppConfig, chat_service: ChatService):
         if response.thinking:
             api_response["thinking"] = response.thinking
 
+        if response.tools_called:
+            api_response["tools_called"] = response.tools_called
+
         return api_response
 
     except Exception as e:
@@ -90,6 +93,10 @@ def api_chat_stream_handler(config: AppConfig, chat_service: ChatService):
     is a JSON object on a ``data:`` line:
 
     - ``{"type": "token", "content": "..."}`` — incremental LLM text chunk
+    - ``{"type": "thinking", "content": "..."}`` — incremental reasoning trace
+      (only when debug reasoning is enabled)
+    - ``{"type": "tool", "name": "..."}`` — a tool the LLM invoked implicitly
+      (native tool calling), emitted before execution
     - ``{"type": "done", "response": ..., "model": ..., ...}`` — final result
     - ``{"type": "error", "message": "..."}`` — failure
 

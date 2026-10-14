@@ -243,7 +243,11 @@ The `features.db` SQLite database includes:
 Open [http://localhost:8050](http://localhost:8050) after starting the app.
 
 1. **Settings**: Enter the LLM host, port, and model.
-2. **Chat**: The main UI is a chat interface with your Ollama LLM. Drive the agent with slash commands:
+2. **Chat**: The main UI is a chat interface with your Ollama LLM. Just ask in
+   natural language — the model calls the right tool implicitly via Ollama's
+   native tool-calling API (e.g. "show me 5 photos of dogs from last summer",
+   "how many photos are processed?", "start processing the folder"). You can
+   also type the slash commands directly:
    - `/scan` — list processable images in the current folder
    - `/process` — process pending images in the current folder
    - `/find <query>` — full-text search over descriptions, subjects, and tags
@@ -338,6 +342,8 @@ Response:
 ```
 
 When the chat service returns a typed response (e.g., photo results), the response includes an additional `response_type` field (e.g., `"photos"`).
+
+When the LLM invoked tools implicitly (native tool calling) to produce the answer, the response includes a `tools_called` field listing the tool function names in call order (e.g., `["count"]`). The streaming endpoint (`/_api/chat/stream`) emits a `{"type": "tool", "name": ...}` event for each implicit tool invocation and carries `tools_called` on the final `done` event.
 
 When debug reasoning is enabled (`LOCAL_PHOTO_AGENT_DEBUG_REASONING=true` or **Settings → Connection → Show reasoning traces**), the response also includes a `thinking` field with the model's reasoning trace (when the model produces one):
 

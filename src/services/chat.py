@@ -9,17 +9,27 @@ Tools are dynamically loaded from the src.services.chat_tools package,
 allowing for extensibility without modifying this file.
 """
 
+import json
 import logging
+import re
 from collections.abc import Generator
 from typing import Any
 
 import requests
 
 from src.config import AppConfig
-from src.interfaces import LLMChatClient
+from src.interfaces import LLMChatClient, ToolCall
 from src.services.chat_response import ChatResponse
 
 logger = logging.getLogger(__name__)
+
+# Response types that render as structured UI (photo galleries, tag chips).
+# These are returned to the user directly instead of being summarized by the
+# LLM, exactly as when the user types the matching slash command.
+_STRUCTURED_RESPONSE_TYPES = frozenset({"photos", "tags", "photos_and_tags"})
+
+# Maximum number of tool-calling turns per message before giving up.
+_MAX_TOOL_TURNS = 5
 
 
 class ChatService:
@@ -88,119 +98,46 @@ class ChatService:
         """
         return list(self._tools.keys())
 
-    def _get_tools_list(self) -> str:
-        """Generate the list of available tools for the system prompt.
-
-        Returns:
-            Formatted string listing all tools and their descriptions
-        """
-        lines = []
-        for command, tool in sorted(self._tools.items()):
-            metadata = tool.metadata
-            # For /find, /tags, and /tag, include the usage pattern
-            if command == "/find":
-                lines.append(f"{command} <number> <description> [@<date>] - {metadata.description} / {metadata.usage}")
-            elif command == "/tags":
-                lines.append(f"{command} [topic] - {metadata.description} / {metadata.usage}")
-            elif command == "/tag":
-                lines.append(f"{command} <tagname> - {metadata.description} / {metadata.usage}")
-            else:
-                lines.append(f"{command} - {metadata.description}")
-        return "\n".join(lines)
-
-    def _get_tool_examples(self) -> str:
-        """Generate example mappings for the system prompt.
-
-        Returns:
-            Formatted string with examples of user inputs and tool responses
-        """
-        examples = []
-
-        # Special examples for /find
-        examples.append("  User: 'find photos of cats' -> YOU: '/find cats'")
-        examples.append("  User: 'find 5 photos of cats' -> YOU: '/find 5 cats'")
-        examples.append("  User: 'show me 10 images of dogs' -> YOU: '/find 10 dogs'")
-        examples.append("  User: 'I want to see 20 pictures of mountains' -> YOU: '/find 20 mountains'")
-        examples.append("  User: 'can you find 3 photos of beaches' -> YOU: '/find 3 beaches'")
-        examples.append("  User: 'show me photos of animals' -> YOU: '/find animals'")
-        examples.append("  User: 'show me photos of birds' -> YOU: '/find birds'")
-        # /find with a date filter (append @<date> when the user mentions a time)
-        examples.append("  User: 'find photos of a car from last summer' -> YOU: '/find car @last summer'")
-        examples.append("  User: 'show me 5 photos of dogs from summer 2024' -> YOU: '/find 5 dogs @summer 2024'")
-        examples.append("  User: 'find photos of snow from January 2024' -> YOU: '/find snow @january 2024'")
-        examples.append("  User: 'show me beach photos from 2023' -> YOU: '/find beach @2023'")
-        examples.append("  User: 'find photos of flowers from last month' -> YOU: '/find flowers @last month'")
-
-        # Examples for /tags tool
-        examples.append("  User: 'show me tags related to sport' -> YOU: '/tags sport'")
-        examples.append("  User: 'list all tags' -> YOU: '/tags'")
-        examples.append("  User: 'what tags do you have?' -> YOU: '/tags'")
-        examples.append("  User: 'find tags about animals' -> YOU: '/tags animals'")
-
-        # Examples for /tag tool (ONLY for exact existing tag names)
-        examples.append("  User: 'show me photos with the nature tag' -> YOU: '/tag nature'")
-        examples.append("  User: 'show me photos tagged with football' -> YOU: '/tag football'")
-
-        # Examples for other tools
-        examples.append("  User: 'scan the folder' -> YOU: '/scan'")
-        examples.append("  User: 'start processing the photos' -> YOU: '/process'")
-        examples.append("  User: 'how many photos have been processed?' -> YOU: '/count'")
-        examples.append("  User: 'what is the status?' -> YOU: '/status'")
-        examples.append("  User: 'what can you do' -> YOU: '/tools'")
-        examples.append("  User: 'who are you' -> YOU: '/about'")
-
-        return "\n".join(examples)
-
     def get_system_prompt(self) -> str:
         """Build the system prompt for the LLM.
 
-        The system prompt is dynamically generated from the loaded tools'
-        metadata, ensuring it stays up-to-date when new tools are added.
+        With native tool calling the model receives the tool specifications
+        alongside this prompt (see :meth:`_get_tool_specs`); the prompt
+        describes the assistant's role and the routing rules for choosing
+        between similar tools.
 
         Returns:
             The system prompt string to guide LLM behavior
         """
-        tools_list = self._get_tools_list()
-        examples = self._get_tool_examples()
-
         think_rule = ""
         if getattr(self.config, "debug_reasoning", False):
             think_rule = (
-                "RULE 0: ALWAYS reason briefly in your thinking before responding, even for tool commands. "
-                "Your thinking is internal and separate from your response — it does NOT count as "
-                "'other text' or violate the rule that your response must be only the tool command.\n\n"
+                "RULE 0: ALWAYS reason briefly in your thinking before responding, even when calling "
+                "tools. Your thinking is internal and separate from your response.\n\n"
             )
 
         return (
             "You are the Local Photo Agent, a chat assistant for a photo feature extraction system.\n"
             "You MUST follow these rules EXACTLY:\n\n"
             f"{think_rule}"
-            "RULE 1: If the user's intent matches ANY tool, respond with EXACTLY ONE tool command and NOTHING else.\n"
-            "RULE 2: If the user's intent does NOT match any tool, respond as a helpful assistant.\n\n"
-            "CRITICAL INSTRUCTIONS FOR TOOL COMMANDS:\n"
-            "- Return ONLY the tool command text, NO other text, NO markdown, NO explanations\n"
-            "- The tool command must be EXACTLY like: /scan or /process or /find cats\n"
-            "- NEVER add words before, after, or around the tool command\n"
-            "- NEVER say 'I can do that with...' or 'Here is...' or any other text\n"
-            "- NEVER use markdown formatting like **bold** or code blocks\n"
-            "- The ONLY exception: if user asks about your capabilities, you may describe them\n\n"
-            f"AVAILABLE TOOL COMMANDS:\n"
-            f"{tools_list}\n\n"
-            "IMPORTANT: When the user says ANYTHING that matches a tool's purpose, return ONLY the tool command.\n"
-            "For /find command: If the user specifies a number (e.g., 'find 5 photos of cats', 'show me 10 images'), \n"
-            "extract the number EXACTLY as stated and include it at the beginning of the description in the tool command.\n"
-            "For /tags command: Use '/tags' for listing all tags, '/tags <topic>' for finding tags related to a topic.\n"
-            "For /tag command: Use '/tag <tagname>' for showing photos with a specific tag and related tags.\n"
-            "\n"
+            "RULE 1: If the user's intent matches ANY tool, call that tool — do not ask for permission "
+            "and do not describe what you will do instead of doing it.\n"
+            "RULE 2: If the user's intent does NOT match any tool, respond as a helpful assistant.\n"
+            "When a tool returns results, summarize them concisely for the user.\n\n"
             "ROUTING RULES (choose the correct tool):\n"
-            "- /find: search photos by a DESCRIPTION or SUBJECT the user describes (e.g., 'photos of animals', 'photos of birds', 'dogs running'). Use /find for any 'show me photos of X' where X is a subject/description, NOT an exact tag name.\n"
-            "  When the user mentions WHEN the photo was taken (e.g., 'last summer', 'summer 2024', 'January 2024', '2023', 'last month', 'last winter with a baby'), separate the visual description from the time words. Preferred form: '/find <description> @<date>' e.g. '/find car @last summer' or '/find 5 baby @last winter'. If you cannot cleanly separate them, output '/find <description and date words as written>' and the find tool will split them itself. Never drop the description or the date.\n"
-            "- /tag: ONLY filter photos by an EXACT tag name the user already knows exists (e.g., 'photos with the nature tag'). Never use /tag for general subject searches — use /find instead.\n"
-            "- /tags: list or discover available tag names by topic.\n"
-            "- If unsure whether the user means a subject search or an exact tag, prefer /find.\n"
-            "For example:\n"
-            f"{examples}\n\n"
-            "REMEMBER: The tool command must be the ONLY text in your response. Nothing else."
+            "- find: search photos by a DESCRIPTION or SUBJECT the user describes (e.g. 'photos of "
+            "animals', 'dogs running'). Use find for any 'show me photos of X' where X is a subject or "
+            "description, NOT an exact tag name.\n"
+            "  When the user mentions WHEN the photo was taken (e.g. 'last summer', 'summer 2024', "
+            "'January 2024', '2023', 'last month'), pass it as the date parameter (e.g. 'last summer'). "
+            "When the user specifies a number of photos (e.g. 'show me 10 images of dogs'), pass it as "
+            "the limit parameter.\n"
+            "- tag: ONLY filter photos by an EXACT tag name the user already knows exists (e.g. 'photos "
+            "with the nature tag'). Never use tag for general subject searches — use find instead.\n"
+            "- tags: list or discover available tag names by topic.\n"
+            "- If unsure whether the user means a subject search or an exact tag, prefer find.\n"
+            "- scan, process, and count require a folder to be selected. If a tool reports that no folder "
+            "is selected, tell the user to select a folder first.\n"
         )
 
     def handle_tool_command(self, command: str, folder_path: str | None = None) -> ChatResponse:
@@ -209,6 +146,12 @@ class ChatService:
         This is the single entry point for all tool command handling.
         Tools are dynamically loaded and executed based on the command string.
 
+        The command keyword is matched case-insensitively and may carry
+        arguments (e.g. ``/find 5 cats``). Argument case is preserved because
+        tag names are case-sensitive. Matching uses a word boundary after the
+        keyword, so ``/tagsxyz`` is rejected instead of being routed to the
+        ``/tags`` tool.
+
         Args:
             command: The tool command string (e.g., "/count", "/find cats")
             folder_path: Optional folder path for database operations
@@ -216,33 +159,17 @@ class ChatService:
         Returns:
             ChatResponse with the result of the tool command
         """
-        # Preserve original case of arguments (tag names are case-sensitive in
-        # some queries); match only the command keyword case-insensitively.
         command = command.strip()
-        command_lower = command.lower()
+        normalized = self._normalize_tool_command(command)
+        if normalized is None:
+            return ChatResponse(status="error", response=f"Unknown command: {command}", sender="assistant", model="N/A")
 
-        # Handle /find and /tags specially since they have arguments
-        if command_lower.startswith("/find "):
-            tool = self._tools.get("/find")
-            if tool:
-                return tool(folder_path, command)
+        keyword = normalized.split(None, 1)[0]
+        tool = self._tools.get(keyword)
+        if tool is None:
+            return ChatResponse(status="error", response=f"Unknown command: {command}", sender="assistant", model="N/A")
 
-        if command_lower.startswith("/tags"):
-            tool = self._tools.get("/tags")
-            if tool:
-                return tool(folder_path, command)
-
-        if command_lower.startswith("/tag "):
-            tool = self._tools.get("/tag")
-            if tool:
-                return tool(folder_path, command)
-
-        # Look up exact command match (case-insensitive)
-        tool = self._tools.get(command_lower)
-        if tool:
-            return tool(folder_path, command)
-
-        return ChatResponse(status="error", response=f"Unknown command: {command}", sender="assistant", model="N/A")
+        return tool(folder_path, normalized)
 
     def _ensure_chat_client(self) -> LLMChatClient:
         """Ensure we have a chat client, creating a default one if needed.
@@ -282,6 +209,183 @@ class ChatService:
             raw_response = raw_response[:-3].rstrip()
         return raw_response.strip()
 
+    def _command_alternation(self) -> str:
+        """Build a regex alternation of all registered tool commands.
+
+        Commands are sorted longest-first so that e.g. ``/tags`` is tried
+        before ``/tag`` and the shorter command cannot shadow the longer one.
+
+        Returns:
+            Regex alternation string of escaped command keywords.
+        """
+        commands = sorted(self._tools.keys(), key=len, reverse=True)
+        return "|".join(re.escape(command) for command in commands)
+
+    def _canonical_keyword(self, keyword: str) -> str:
+        """Map a matched command keyword to its registered (canonical) form.
+
+        Matching is case-insensitive (models emit ``/Find`` as often as
+        ``/find``); the returned keyword is the registered command so tools
+        can slice arguments by ``len(metadata.command)`` reliably.
+
+        Args:
+            keyword: The matched keyword, possibly in non-canonical case.
+
+        Returns:
+            The registered command string (e.g. ``/find``).
+        """
+        lowered = keyword.lower()
+        for command in self._tools:
+            if command.lower() == lowered:
+                return command
+        return keyword
+
+    @staticmethod
+    def _strip_command_wrappers(text: str) -> str:
+        """Strip formatting a model may wrap around a command.
+
+        Removes surrounding whitespace, markdown emphasis/quotes/backticks
+        (``**/scan**``, ``"/scan"``, `` `/scan` ``) and trailing sentence
+        punctuation (``/scan.``).
+
+        Args:
+            text: The raw line or string to clean.
+
+        Returns:
+            The cleaned string.
+        """
+        return text.strip().strip("* `\"'").strip().rstrip(".,;:!?").strip()
+
+    def _normalize_tool_command(self, text: str) -> str | None:
+        """Match a whole string against a registered tool command.
+
+        Args:
+            text: The candidate command string (e.g. direct user input).
+
+        Returns:
+            The canonical command (``/find 5 cats``) with the keyword
+            normalised to its registered form and the arguments preserved
+            verbatim, or None when the text is not a single tool command.
+        """
+        candidate = self._strip_command_wrappers(self._clean_response(text or ""))
+        match = re.match(rf"^({self._command_alternation()})(?:\s+([\s\S]*))?$", candidate, re.IGNORECASE)
+        if not match:
+            return None
+        keyword = self._canonical_keyword(match.group(1))
+        args = (match.group(2) or "").strip()
+        return f"{keyword} {args}" if args else keyword
+
+    def _extract_tool_command(self, text: str) -> str | None:
+        """Extract a tool command from a free-form LLM response.
+
+        The system prompt asks the model to answer with exactly one tool
+        command and nothing else, but models frequently wrap the command in
+        quotes/backticks, add trailing punctuation, or prepend prose. This
+        recovers the command in those cases:
+
+        1. A line that is exactly a command (ignoring wrappers/punctuation).
+        2. A command mentioned after sentence punctuation, e.g.
+           ``Sure! /find cats``.
+
+        Helpful answers that merely mention a command in running prose
+        (``You can use /scan to list photos``) are deliberately not matched.
+
+        Args:
+            text: The raw LLM response.
+
+        Returns:
+            The canonical command string, or None when no command is found.
+        """
+        cleaned = self._clean_response(text or "")
+        if not cleaned:
+            return None
+        alternation = self._command_alternation()
+        lines = cleaned.splitlines()
+
+        # Pass 1: a line that is exactly a command.
+        for line in lines:
+            candidate = self._strip_command_wrappers(line)
+            match = re.match(rf"^({alternation})(?:\s+([\s\S]*))?$", candidate, re.IGNORECASE)
+            if match:
+                keyword = self._canonical_keyword(match.group(1))
+                args = (match.group(2) or "").strip()
+                return f"{keyword} {args}" if args else keyword
+
+        # Pass 2: a command after sentence punctuation within a line.
+        inline = re.compile(rf"(?<=[.!?;:])\s*({alternation})(?=\s|$|[.,;:!?])", re.IGNORECASE)
+        for line in lines:
+            match = inline.search(line)
+            if match:
+                keyword = self._canonical_keyword(match.group(1))
+                args = self._strip_command_wrappers(line[match.end() :])
+                return f"{keyword} {args}" if args else keyword
+
+        return None
+
+    def _get_tool_specs(self) -> list[dict]:
+        """Build tool specifications for native LLM tool calling.
+
+        Returns:
+            List of tool spec dicts (Ollama ``tools`` format), one per
+            loaded tool.
+        """
+        return [tool.to_tool_spec() for tool in self._tools.values()]
+
+    def _function_command(self, function_name: str) -> str | None:
+        """Map an LLM tool function name back to its slash command.
+
+        Args:
+            function_name: The function name from a tool call (e.g. ``find``).
+
+        Returns:
+            The registered command (e.g. ``/find``), or None when unknown.
+        """
+        for command, tool in self._tools.items():
+            if tool.function_name == function_name:
+                return command
+        return None
+
+    def _execute_tool_calls(
+        self, tool_calls: tuple[ToolCall, ...], folder_path: str | None
+    ) -> list[tuple[ToolCall, ChatResponse]]:
+        """Execute tool calls requested by the LLM.
+
+        Args:
+            tool_calls: Tool invocations (name + arguments) from the model.
+            folder_path: Optional folder path for database operations.
+
+        Returns:
+            List of (tool_call, ChatResponse) pairs, in call order.
+        """
+        executed: list[tuple[ToolCall, ChatResponse]] = []
+        for call in tool_calls:
+            command = self._function_command(call.name)
+            if command is None:
+                logger.warning("LLM requested unknown tool %r", call.name)
+                result = ChatResponse(
+                    status="error",
+                    response=f"Unknown tool: {call.name}",
+                    sender="assistant",
+                    model="N/A",
+                )
+            else:
+                tool = self._tools[command]
+                command_str = tool.command_from_arguments(call.arguments)
+                logger.debug("[Chat LLM] Tool call %s(%r) -> %r", call.name, call.arguments, command_str)
+                result = self.handle_tool_command(command_str, folder_path)
+            executed.append((call, result))
+        return executed
+
+    @staticmethod
+    def _tool_result_text(result: ChatResponse) -> str:
+        """Render a tool result as text for feeding back to the LLM."""
+        if isinstance(result.response, dict):
+            return json.dumps(result.response, ensure_ascii=False)
+        text = str(result.response)
+        if result.status == "error":
+            return f"Tool error: {text}"
+        return text
+
     def process_message(
         self,
         message: str,
@@ -295,8 +399,12 @@ class ChatService:
 
         This is the main entry point for message processing. It handles:
         1. Direct tool commands (e.g., user types "/count")
-        2. LLM-based chat for non-command messages
-        3. Tool commands returned by the LLM (e.g., LLM returns "/find cats")
+        2. LLM-based chat with native tool calling for non-command messages:
+           the model invokes tools implicitly, tool results are fed back to
+           the model, and its final text answer is returned. Structured tool
+           results (photo galleries, tag chips) are returned directly.
+        3. Tool commands emitted by the LLM as text (fallback for models that
+           reply with e.g. "/find cats" instead of calling the tool)
 
         Args:
             message: The user's message
@@ -313,29 +421,12 @@ class ChatService:
         if not message:
             return ChatResponse(status="error", response="Message is required", sender="assistant", model="N/A")
 
-        # Check if message is a direct tool command
-        message_lower = message.lower().strip()
+        # Check if the message is a direct tool command
+        normalized = self._normalize_tool_command(message)
+        if normalized is not None:
+            return self.handle_tool_command(normalized, folder_path)
 
-        # Get list of tool commands for checking
-        tool_commands = self._get_tool_commands()
-
-        # Check for exact slash command match first
-        if message_lower in tool_commands:
-            return self.handle_tool_command(message, folder_path)
-
-        # Check for /find with description
-        if message_lower.startswith("/find "):
-            return self.handle_tool_command(message, folder_path)
-
-        # Check for /tags with topic
-        if message_lower.startswith("/tags"):
-            return self.handle_tool_command(message, folder_path)
-
-        # Check for /tag with tag name
-        if message_lower.startswith("/tag "):
-            return self.handle_tool_command(message, folder_path)
-
-        # Not a direct command, send to LLM
+        # Not a direct command, send to the LLM with native tool calling
         try:
             # Get the chat client (will create one if needed using host/port/model)
             chat_client = self._ensure_chat_client()
@@ -343,57 +434,76 @@ class ChatService:
             # Use provided parameters or fall back to chat client's defaults
             effective_model = model or chat_client.model
 
-            # Get system prompt
             system_prompt = self.get_system_prompt()
-
             think = bool(getattr(self.config, "debug_reasoning", False))
-            raw_response, thinking = chat_client.chat_with_thinking(
-                message, system_prompt=system_prompt, history=history, think=think
-            )
-            logger.debug("[Chat LLM] Raw response: %r", raw_response)
-            if thinking:
-                logger.debug("[Chat LLM] Reasoning trace: %r", thinking)
+            tool_specs = self._get_tool_specs()
+            messages = LLMChatClient.build_messages(message, system_prompt=system_prompt, history=history)
 
-            # Clean up response
-            cleaned_response = self._clean_response(raw_response)
-            logger.debug("[Chat LLM] Cleaned response: %r", cleaned_response)
+            thinking_parts: list[str] = []
+            called_functions: list[str] = []
 
-            # Check if the LLM returned a tool command
-            response_stripped = cleaned_response.strip()
-            logger.debug("[Chat LLM] Stripped response: %r", response_stripped)
+            for _turn in range(_MAX_TOOL_TURNS + 1):
+                reply = chat_client.chat_messages(messages, tools=tool_specs, think=think)
+                if reply.thinking:
+                    thinking_parts.append(reply.thinking)
+                    logger.debug("[Chat LLM] Reasoning trace: %r", reply.thinking)
 
-            if response_stripped in tool_commands:
-                result = self.handle_tool_command(response_stripped, folder_path)
-                # Update model in response to reflect the actual model used
-                result.model = effective_model
-                result.thinking = thinking
-                return result
+                if not reply.tool_calls:
+                    # Final text answer. Keep the slash-command text routing
+                    # as a fallback for models that emit a command as text
+                    # instead of calling the tool.
+                    cleaned_response = self._clean_response(reply.content)
+                    logger.debug("[Chat LLM] Cleaned response: %r", cleaned_response)
+                    extracted = self._extract_tool_command(reply.content)
+                    if extracted is not None:
+                        logger.debug("[Chat LLM] Extracted tool command: %r", extracted)
+                        result = self.handle_tool_command(extracted, folder_path)
+                        result.model = effective_model
+                        result.thinking = "\n".join(thinking_parts) or None
+                        result.tools_called = called_functions or None
+                        return result
+                    return ChatResponse(
+                        status="success",
+                        response=cleaned_response,
+                        sender="assistant",
+                        model=effective_model,
+                        thinking="\n".join(thinking_parts) or None,
+                        tools_called=called_functions or None,
+                    )
 
-            if response_stripped.startswith("/find ") and folder_path:
-                result = self.handle_tool_command(response_stripped, folder_path)
-                result.model = effective_model
-                result.thinking = thinking
-                return result
+                # Execute the requested tools. Structured results (photo
+                # galleries, tag chips) are returned to the user directly,
+                # exactly as when the matching slash command is typed.
+                called_functions.extend(call.name for call in reply.tool_calls)
+                executed = self._execute_tool_calls(reply.tool_calls, folder_path)
+                for _call, result in executed:
+                    if result.response_type in _STRUCTURED_RESPONSE_TYPES:
+                        result.model = effective_model
+                        result.thinking = "\n".join(thinking_parts) or None
+                        result.tools_called = called_functions
+                        return result
 
-            if response_stripped.startswith("/tags") and folder_path:
-                result = self.handle_tool_command(response_stripped, folder_path)
-                result.model = effective_model
-                result.thinking = thinking
-                return result
+                # Feed text results back so the model can compose an answer.
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": reply.content or "",
+                        "tool_calls": [
+                            {"function": {"name": call.name, "arguments": call.arguments}} for call in reply.tool_calls
+                        ],
+                    }
+                )
+                for call, result in executed:
+                    messages.append({"role": "tool", "name": call.name, "content": self._tool_result_text(result)})
 
-            if response_stripped.startswith("/tag ") and folder_path:
-                result = self.handle_tool_command(response_stripped, folder_path)
-                result.model = effective_model
-                result.thinking = thinking
-                return result
-
-            # Regular LLM response
+            logger.error("LLM exceeded the maximum of %d tool-calling turns", _MAX_TOOL_TURNS)
             return ChatResponse(
-                status="success",
-                response=cleaned_response,
+                status="error",
+                response="The model did not finish after several tool calls. Please rephrase your request.",
                 sender="assistant",
                 model=effective_model,
-                thinking=thinking,
+                response_type="error",
+                tools_called=called_functions or None,
             )
 
         except requests.exceptions.RequestException as e:
@@ -429,6 +539,7 @@ class ChatService:
             "status": result.status,
             "response_type": result.response_type,
             "thinking": result.thinking,
+            "tools_called": list(result.tools_called or []),
         }
 
     def process_message_stream(
@@ -442,14 +553,18 @@ class ChatService:
     ) -> Generator[dict[str, Any], None, None]:
         """Process a chat message with streaming, yielding event dicts.
 
-        Mirrors :meth:`process_message` but streams LLM tokens incrementally.
-        Direct tool commands and LLM-detected tool redirects produce a
-        single ``done`` event (no token streaming) since the tool result
-        is computed server-side.
+        Mirrors :meth:`process_message` but streams LLM tokens incrementally
+        and runs the same native tool-calling loop. Direct tool commands and
+        LLM-detected tool redirects produce a single ``done`` event (no token
+        streaming) since the tool result is computed server-side.
 
         Event types yielded:
 
         - ``{"type": "token", "content": "..."}`` — incremental LLM text
+        - ``{"type": "thinking", "content": "..."}`` — incremental reasoning
+          trace (only when debug reasoning is enabled)
+        - ``{"type": "tool", "name": "..."}`` — a tool the LLM invoked
+          implicitly (native tool calling); emitted before execution
         - ``{"type": "done", "response": ..., "model": ..., ...}`` — final
           result (response may differ from concatenated tokens when a
           tool redirect occurred)
@@ -460,66 +575,97 @@ class ChatService:
             yield {"type": "error", "message": "Message is required"}
             return
 
-        message_lower = message.lower().strip()
-        tool_commands = self._get_tool_commands()
-
         # Direct tool commands: execute immediately (no streaming)
-        if (
-            message_lower in tool_commands
-            or message_lower.startswith("/find ")
-            or message_lower.startswith("/tags")
-            or message_lower.startswith("/tag ")
-        ):
-            result = self.handle_tool_command(message, folder_path)
+        normalized = self._normalize_tool_command(message)
+        if normalized is not None:
+            result = self.handle_tool_command(normalized, folder_path)
             yield from self._chat_response_to_events(result)
             return
 
-        # Regular LLM message: stream tokens
+        # Regular LLM message: stream tokens, calling tools as requested
         try:
             chat_client = self._ensure_chat_client()
             effective_model = model or chat_client.model
             system_prompt = self.get_system_prompt()
-
             think = bool(getattr(self.config, "debug_reasoning", False))
-            full_response = ""
+            tool_specs = self._get_tool_specs()
+            messages = LLMChatClient.build_messages(message, system_prompt=system_prompt, history=history)
+
             thinking_text = ""
-            for chunk in chat_client.chat_stream_events(
-                message, system_prompt=system_prompt, history=history, think=think
-            ):
-                if chunk.kind == "thinking":
-                    thinking_text += chunk.content
-                    yield {"type": "thinking", "content": chunk.content}
-                else:
-                    full_response += chunk.content
-                    yield {"type": "token", "content": chunk.content}
+            called_functions: list[str] = []
 
-            # Check whether the LLM's complete response is a tool command
-            cleaned_response = self._clean_response(full_response)
-            response_stripped = cleaned_response.strip()
+            for _turn in range(_MAX_TOOL_TURNS + 1):
+                full_response = ""
+                turn_tool_calls: list[ToolCall] = []
 
-            is_tool_command = response_stripped in tool_commands
-            is_find_command = response_stripped.startswith("/find ") and folder_path
-            is_tags_command = response_stripped.startswith("/tags") and folder_path
-            is_tag_command = response_stripped.startswith("/tag ") and folder_path
+                for chunk in chat_client.chat_messages_stream(messages, tools=tool_specs, think=think):
+                    if chunk.kind == "thinking":
+                        thinking_text += chunk.content
+                        yield {"type": "thinking", "content": chunk.content}
+                    elif chunk.kind == "tool_calls":
+                        turn_tool_calls.extend(chunk.tool_calls)
+                        for call in chunk.tool_calls:
+                            called_functions.append(call.name)
+                            yield {"type": "tool", "name": call.name}
+                    else:
+                        full_response += chunk.content
+                        yield {"type": "token", "content": chunk.content}
 
-            final_thinking = thinking_text or None
+                if not turn_tool_calls:
+                    # Final text answer (with the slash-command text routing
+                    # fallback, as in process_message).
+                    cleaned_response = self._clean_response(full_response)
+                    extracted = self._extract_tool_command(full_response)
+                    if extracted is not None:
+                        result = self.handle_tool_command(extracted, folder_path)
+                        result.model = effective_model
+                        result.thinking = thinking_text or None
+                        result.tools_called = called_functions or None
+                        yield from self._chat_response_to_events(result)
+                        return
 
-            if is_tool_command or is_find_command or is_tags_command or is_tag_command:
-                result = self.handle_tool_command(response_stripped, folder_path)
-                result.model = effective_model
-                result.thinking = final_thinking
-                yield from self._chat_response_to_events(result)
-                return
+                    # Regular LLM response — final event carries the cleaned text
+                    yield {
+                        "type": "done",
+                        "response": cleaned_response,
+                        "model": effective_model,
+                        "sender": "assistant",
+                        "status": "success",
+                        "response_type": None,
+                        "thinking": thinking_text or None,
+                        "tools_called": called_functions,
+                    }
+                    return
 
-            # Regular LLM response — final event carries the cleaned text
+                # Execute the requested tools. Structured results (photo
+                # galleries, tag chips) are returned to the user directly,
+                # exactly as when the matching slash command is typed.
+                executed = self._execute_tool_calls(tuple(turn_tool_calls), folder_path)
+                for _call, result in executed:
+                    if result.response_type in _STRUCTURED_RESPONSE_TYPES:
+                        result.model = effective_model
+                        result.thinking = thinking_text or None
+                        result.tools_called = called_functions
+                        yield from self._chat_response_to_events(result)
+                        return
+
+                # Feed text results back so the model can compose an answer.
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": full_response,
+                        "tool_calls": [
+                            {"function": {"name": call.name, "arguments": call.arguments}} for call in turn_tool_calls
+                        ],
+                    }
+                )
+                for call, result in executed:
+                    messages.append({"role": "tool", "name": call.name, "content": self._tool_result_text(result)})
+
             yield {
-                "type": "done",
-                "response": cleaned_response,
+                "type": "error",
+                "message": "The model did not finish after several tool calls. Please rephrase your request.",
                 "model": effective_model,
-                "sender": "assistant",
-                "status": "success",
-                "response_type": None,
-                "thinking": final_thinking,
             }
 
         except requests.exceptions.RequestException as e:

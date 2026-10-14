@@ -6,7 +6,7 @@ that all chat tools must implement.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from src.config import AppConfig
@@ -28,6 +28,8 @@ class ToolMetadata:
         usage: Usage example (e.g., "/find <number> <description>")
         requires_folder: Whether the tool needs a folder path
         arg_pattern: Optional regex pattern for argument extraction
+        tool_description: Optional model-facing description for native tool
+            calling. Falls back to ``description`` when not set.
     """
 
     command: str
@@ -37,6 +39,7 @@ class ToolMetadata:
     usage: str
     requires_folder: bool = False
     arg_pattern: str | None = None
+    tool_description: str | None = None
 
 
 class BaseTool(ABC):
@@ -54,6 +57,11 @@ class BaseTool(ABC):
 
     metadata: ToolMetadata
 
+    # JSON schema (Ollama tool-calling format) for the tool's arguments.
+    # Tools that take arguments override this together with
+    # command_from_arguments().
+    parameters_schema: ClassVar[dict] = {"type": "object", "properties": {}, "required": []}
+
     def __init__(self, config: "AppConfig"):
         """Initialize the tool with application config.
 
@@ -61,6 +69,51 @@ class BaseTool(ABC):
             config: AppConfig instance with application settings
         """
         self.config = config
+
+    @property
+    def function_name(self) -> str:
+        """Name exposed to the LLM for native tool calling.
+
+        The slash command without the leading slash (e.g. ``/find`` -> ``find``).
+        """
+        return self.metadata.command.lstrip("/")
+
+    def to_tool_spec(self) -> dict:
+        """Build the tool specification for native LLM tool calling.
+
+        Returns:
+            A tool spec dict (``{"type": "function", "function": {...}}`` in
+            the Ollama ``tools`` format) with the function name, a
+            model-facing description, and the JSON schema for the arguments.
+        """
+        metadata = self.metadata
+        description = metadata.tool_description or metadata.description
+        if metadata.requires_folder and "folder" not in description.lower():
+            description = f"{description} Requires a folder to be selected."
+        return {
+            "type": "function",
+            "function": {
+                "name": self.function_name,
+                "description": description,
+                "parameters": self.parameters_schema,
+            },
+        }
+
+    def command_from_arguments(self, arguments: dict | None = None) -> str:
+        """Build the slash command equivalent from structured tool arguments.
+
+        When the LLM invokes the tool via native tool calling, the structured
+        arguments are converted back into the command string the tool already
+        knows how to parse. Tools without arguments return their bare
+        command; tools with arguments override this.
+
+        Args:
+            arguments: The parsed JSON arguments from the tool call.
+
+        Returns:
+            The equivalent slash command string (e.g. ``/find 5 cats``).
+        """
+        return self.metadata.command
 
     @abstractmethod
     def execute(self, folder_path: str | None = None, args: str | None = None) -> "ChatResponse":

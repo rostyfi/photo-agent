@@ -12,7 +12,14 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.interfaces import DEFAULT_LLM_HOST, DEFAULT_LLM_MODEL, ChatStreamChunk, LLMChatClient
+from src.interfaces import (
+    DEFAULT_LLM_HOST,
+    DEFAULT_LLM_MODEL,
+    ChatReply,
+    ChatStreamChunk,
+    LLMChatClient,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,50 +87,65 @@ class OllamaChatClient(LLMChatClient):
     ) -> list[dict]:
         """Build the ``messages`` array for the /api/chat endpoint.
 
-        Converts the chat history (entries with ``sender``/``content``/``type``
-        fields from the web UI) into Ollama chat messages with ``role`` and
-        ``content`` fields, then appends the current user message.
+        Thin wrapper around :meth:`LLMChatClient.build_messages` so the
+        web-UI history conversion lives in exactly one place.
+        """
+        return LLMChatClient.build_messages(message, system_prompt=system_prompt, history=history)
+
+    @staticmethod
+    def _apply_think_prefix(messages: list[dict]) -> list[dict]:
+        """Prepend the Gemma 4 thinking control token to the system message.
+
+        Gemma 4 E2B/E4B edge variants only enter thinking mode when the
+        ``<|think|>`` control token appears at the start of the system prompt;
+        the Ollama ``think`` API parameter alone extracts the reasoning into
+        ``message.thinking`` but does not engage the mode for these variants.
+
+        A brief instruction to reason before responding is also injected.
+        Without it the model frequently emits an empty thinking block for
+        trivial routing tasks, so no trace is surfaced.
+        """
+        prefix = "<|think|>\nReason briefly about the user's request before responding."
+        if not messages:
+            return [{"role": "system", "content": prefix}]
+        first = messages[0]
+        if first.get("role") == "system":
+            merged = dict(first)
+            merged["content"] = f"{prefix}\n\n{first.get('content', '')}"
+            return [merged, *messages[1:]]
+        return [{"role": "system", "content": prefix}, *messages]
+
+    def _build_payload_from_messages(
+        self,
+        messages: list[dict],
+        stream: bool,
+        think: bool,
+        tools: list[dict] | None = None,
+    ) -> dict:
+        """Build the /api/chat payload from a raw message list.
 
         Args:
-            message: The current user message/prompt.
-            system_prompt: Optional system prompt; prepended as a system message.
-            history: Optional chat history from the web UI.
+            messages: Chat messages (``{"role": ..., "content": ...}`` dicts).
+            stream: Whether to stream the response.
+            think: When True, inject the thinking control token into the
+                system message and send the Ollama ``think`` parameter.
+            tools: Optional tool specifications for native tool calling.
 
         Returns:
-            A list of ``{"role": ..., "content": ...}`` dicts.
+            The request payload dict.
         """
-        messages: list[dict] = []
-
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        if history:
-            for entry in history:
-                sender = entry.get("sender", "")
-                content = entry.get("content", "")
-                entry_type = entry.get("type", "text")
-
-                # Map web UI sender to Ollama role.
-                role = "assistant" if sender == "assistant" else "user"
-
-                # Summarise non-text entries so the model gets useful context
-                # without raw photo paths or error stack traces.
-                if entry_type == "photos":
-                    photo_paths = entry.get("photo_paths", [])
-                    count = entry.get("count", len(photo_paths))
-                    text = f"Found {count} matching photos"
-                elif entry_type == "error":
-                    text = f"Error - {content}"
-                elif entry_type == "loading":
-                    continue  # skip loading placeholders
-                else:
-                    text = str(content)
-
-                if text:
-                    messages.append({"role": role, "content": text})
-
-        messages.append({"role": "user", "content": message})
-        return messages
+        if think:
+            messages = self._apply_think_prefix(messages)
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "stream": stream,
+        }
+        if think:
+            payload["think"] = True
+        if tools:
+            payload["tools"] = tools
+        return payload
 
     def _build_payload(
         self,
@@ -133,46 +155,87 @@ class OllamaChatClient(LLMChatClient):
         stream: bool,
         think: bool,
     ) -> dict:
-        """Build the request payload for the /api/chat endpoint.
+        """Build the request payload for the /api/chat endpoint."""
+        messages = self._build_messages(message, system_prompt, history)
+        return self._build_payload_from_messages(messages, stream=stream, think=think)
 
-        When ``think`` is True the ``<|think|>`` control token is prepended to
-        the system prompt. Gemma 4 E2B/E4B edge variants only enter thinking
-        mode when this token appears at the start of the system prompt; the
-        Ollama ``think`` API parameter alone extracts the reasoning into
-        ``message.thinking`` but does not engage the mode for these variants.
+    def _post_chat(self, payload: dict) -> dict:
+        """POST a payload to /api/chat and return the parsed JSON response.
 
-        A brief instruction to reason before responding is also injected.
-        Without it the model frequently emits an empty thinking block for
-        trivial routing tasks (the system prompt's "Return ONLY the tool
-        command" instruction suppresses reasoning), so no trace is surfaced.
+        Raises:
+            requests.exceptions.RequestException: If the request fails.
+            RuntimeError: If the response is not valid JSON.
         """
-        if think:
-            prefix = "<|think|>\nReason briefly about the user's request before responding."
-            system_prompt = f"{prefix}\n\n{system_prompt}" if system_prompt else prefix
-        payload: dict = {
-            "model": self.model,
-            "messages": self._build_messages(message, system_prompt, history),
-            "stream": stream,
-        }
-        if think:
-            payload["think"] = True
-        return payload
+        url = f"{self.base_url}/api/chat"
+        logger.debug("Sending chat request to %s with model '%s'", url, self.model)
+        response = self._session.post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        try:
+            return response.json()
+        except ValueError as e:
+            logger.error(
+                "Ollama chat returned non-JSON response (status %d): %s", response.status_code, response.text[:200]
+            )
+            raise RuntimeError(
+                f"Ollama chat response was not valid JSON (status {response.status_code}). "
+                f"Model: {self.model}. Response: {response.text[:200]}"
+            ) from e
 
     @staticmethod
-    def _parse_response(result: dict) -> tuple[str, str | None]:
-        """Extract (content, thinking) from a non-streaming /api/chat response."""
-        msg = result.get("message", {}) or {}
-        content = msg.get("content", "") or ""
-        thinking = msg.get("thinking") or None
-        return content, thinking
+    def _parse_tool_calls(raw_tool_calls: list | None) -> tuple[ToolCall, ...]:
+        """Normalise an Ollama ``message.tool_calls`` list into ToolCall tuples.
+
+        ``function.arguments`` may arrive as a dict or as a JSON string;
+        anything unparseable degrades to an empty argument dict.
+        """
+        calls: list[ToolCall] = []
+        for raw in raw_tool_calls or []:
+            function = raw.get("function", {}) or {}
+            name = function.get("name") or ""
+            if not name:
+                continue
+            arguments = function.get("arguments", {})
+            if isinstance(arguments, str):
+                arguments = OllamaChatClient._parse_arguments_text(arguments)
+            if not isinstance(arguments, dict):
+                arguments = {}
+            calls.append(ToolCall(name=name, arguments=arguments))
+        return tuple(calls)
 
     @staticmethod
-    def _parse_stream_chunk(chunk: dict) -> tuple[str | None, str | None]:
-        """Extract (content_token, thinking_token) from a streaming /api/chat chunk."""
-        msg = chunk.get("message", {}) or {}
-        content = msg.get("content") or None
-        thinking = msg.get("thinking") or None
-        return content, thinking
+    def _parse_arguments_text(text: str) -> dict:
+        """Parse a tool-call arguments JSON string, tolerating partial input."""
+        if not text or not text.strip():
+            return {}
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _finalise_streamed_tool_calls(pending: dict[int, dict]) -> tuple[ToolCall, ...]:
+        """Parse accumulated streamed tool-call fragments into ToolCall tuples.
+
+        Ollama streams ``function.arguments`` as partial JSON strings that
+        concatenate across chunks; some versions instead repeat the complete
+        arguments on every chunk. Both shapes are handled: the concatenation
+        of all fragments is tried first, then the last non-empty fragment.
+        """
+        calls: list[ToolCall] = []
+        for position in sorted(pending):
+            entry = pending[position]
+            name = entry.get("name") or ""
+            if not name:
+                continue
+            arguments: dict = {}
+            fragments = [f for f in entry.get("fragments", []) if f]
+            if fragments:
+                arguments = OllamaChatClient._parse_arguments_text("".join(fragments))
+                if not arguments:
+                    arguments = OllamaChatClient._parse_arguments_text(fragments[-1])
+            calls.append(ToolCall(name=name, arguments=arguments))
+        return tuple(calls)
 
     def chat(
         self,
@@ -197,26 +260,43 @@ class OllamaChatClient(LLMChatClient):
         Raises:
             requests.exceptions.RequestException: If the request fails.
         """
-        url = f"{self.base_url}/api/chat"
-        payload = self._build_payload(message, system_prompt, history, stream=False, think=think)
+        messages = self._build_messages(message, system_prompt, history)
+        return self.chat_messages(messages, think=think).content
 
-        logger.debug("Sending chat request to %s with model '%s'", url, self.model)
+    def chat_messages(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        think: bool = False,
+    ) -> ChatReply:
+        """Send a raw message list to /api/chat and return a structured reply.
 
-        response = self._session.post(url, json=payload, timeout=self.timeout)
-        response.raise_for_status()
-        try:
-            result = response.json()
-        except ValueError as e:
-            logger.error(
-                "Ollama chat returned non-JSON response (status %d): %s", response.status_code, response.text[:200]
-            )
-            raise RuntimeError(
-                f"Ollama chat response was not valid JSON (status {response.status_code}). "
-                f"Model: {self.model}. Response: {response.text[:200]}"
-            ) from e
+        Supports native tool calling: ``tools`` carries the tool
+        specifications offered to the model, and the reply reports any
+        requested tool calls alongside the text answer. Prior assistant tool
+        calls and ``role="tool"`` results may be included in ``messages`` so
+        the model can continue a tool-calling conversation.
 
-        content, _ = self._parse_response(result)
-        return content
+        Args:
+            messages: Chat messages (``{"role": ..., "content": ...}`` dicts).
+            tools: Optional tool specifications (Ollama ``tools`` format).
+            think: When True, request the model's reasoning trace.
+
+        Returns:
+            A :class:`ChatReply` with content, thinking, and tool calls.
+
+        Raises:
+            requests.exceptions.RequestException: If the request fails.
+        """
+        payload = self._build_payload_from_messages(messages, stream=False, think=think, tools=tools)
+        logger.debug("Sending chat request (tools=%s) with model '%s'", bool(tools), self.model)
+        result = self._post_chat(payload)
+        msg = result.get("message", {}) or {}
+        return ChatReply(
+            content=msg.get("content", "") or "",
+            thinking=msg.get("thinking") or None,
+            tool_calls=self._parse_tool_calls(msg.get("tool_calls")),
+        )
 
     def chat_with_thinking(
         self,
@@ -244,28 +324,11 @@ class OllamaChatClient(LLMChatClient):
         Raises:
             requests.exceptions.RequestException: If the request fails.
         """
-        url = f"{self.base_url}/api/chat"
-        payload = self._build_payload(message, system_prompt, history, stream=False, think=think)
-
-        logger.debug("Sending chat request (think=%s) to %s with model '%s'", think, url, self.model)
-
-        response = self._session.post(url, json=payload, timeout=self.timeout)
-        response.raise_for_status()
-        try:
-            result = response.json()
-        except ValueError as e:
-            logger.error(
-                "Ollama chat returned non-JSON response (status %d): %s", response.status_code, response.text[:200]
-            )
-            raise RuntimeError(
-                f"Ollama chat response was not valid JSON (status {response.status_code}). "
-                f"Model: {self.model}. Response: {response.text[:200]}"
-            ) from e
-
-        content, thinking = self._parse_response(result)
-        if think and thinking:
-            logger.debug("[Chat LLM] Reasoning trace: %r", thinking)
-        return content, thinking
+        messages = self._build_messages(message, system_prompt, history)
+        reply = self.chat_messages(messages, think=think)
+        if think and reply.thinking:
+            logger.debug("[Chat LLM] Reasoning trace: %r", reply.thinking)
+        return reply.content, reply.thinking
 
     def chat_stream(
         self,
@@ -294,14 +357,46 @@ class OllamaChatClient(LLMChatClient):
         Raises:
             requests.exceptions.RequestException: If the request fails.
         """
+        messages = self._build_messages(message, system_prompt, history)
+        for chunk in self.chat_messages_stream(messages, think=think):
+            if chunk.kind == "response" and chunk.content:
+                yield chunk.content
+
+    def chat_messages_stream(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        think: bool = False,
+    ) -> Generator[ChatStreamChunk, None, None]:
+        """Stream a reply to a raw message list, yielding typed chunks.
+
+        Supports native tool calling: ``tools`` carries the tool
+        specifications offered to the model. Reasoning (``think``) and answer
+        text stream incrementally; tool invocations requested by the model
+        are accumulated across chunks (Ollama streams ``function.arguments``
+        as partial JSON strings) and emitted as a single final
+        ``"tool_calls"`` chunk.
+
+        Args:
+            messages: Chat messages (``{"role": ..., "content": ...}`` dicts).
+            tools: Optional tool specifications (Ollama ``tools`` format).
+            think: When True, request the model's reasoning trace.
+
+        Yields:
+            :class:`ChatStreamChunk` instances (``"thinking"``, ``"response"``,
+            and/or a final ``"tool_calls"`` chunk).
+
+        Raises:
+            requests.exceptions.RequestException: If the request fails.
+        """
+        payload = self._build_payload_from_messages(messages, stream=True, think=think, tools=tools)
+        logger.debug("Streaming chat request (tools=%s) with model '%s'", bool(tools), self.model)
+
         url = f"{self.base_url}/api/chat"
-        payload = self._build_payload(message, system_prompt, history, stream=True, think=think)
-
-        logger.debug("Streaming chat request to %s with model '%s'", url, self.model)
-
         response = self._session.post(url, json=payload, timeout=self.timeout, stream=True)
         response.raise_for_status()
 
+        pending: dict[int, dict] = {}
         for line in response.iter_lines():
             if not line:
                 continue
@@ -309,11 +404,29 @@ class OllamaChatClient(LLMChatClient):
                 chunk = json.loads(line)
             except (json.JSONDecodeError, ValueError):
                 continue
-            content, _ = self._parse_stream_chunk(chunk)
+            msg = chunk.get("message", {}) or {}
+            thinking = msg.get("thinking") or None
+            if thinking:
+                yield ChatStreamChunk(kind="thinking", content=thinking)
+            content = msg.get("content") or None
             if content:
-                yield content
+                yield ChatStreamChunk(kind="response", content=content)
+            for position, raw_call in enumerate(msg.get("tool_calls") or []):
+                function = raw_call.get("function", {}) or {}
+                entry = pending.setdefault(position, {"name": "", "fragments": []})
+                if function.get("name"):
+                    entry["name"] = function["name"]
+                fragment = function.get("arguments")
+                if isinstance(fragment, dict):
+                    fragment = json.dumps(fragment)
+                if isinstance(fragment, str) and fragment:
+                    entry["fragments"].append(fragment)
             if chunk.get("done"):
                 break
+
+        tool_calls = self._finalise_streamed_tool_calls(pending)
+        if tool_calls:
+            yield ChatStreamChunk(kind="tool_calls", content="", tool_calls=tool_calls)
 
     def chat_stream_events(
         self,
@@ -342,28 +455,8 @@ class OllamaChatClient(LLMChatClient):
         Raises:
             requests.exceptions.RequestException: If the request fails.
         """
-        url = f"{self.base_url}/api/chat"
-        payload = self._build_payload(message, system_prompt, history, stream=True, think=think)
-
-        logger.debug("Streaming chat request (think=%s) to %s with model '%s'", think, url, self.model)
-
-        response = self._session.post(url, json=payload, timeout=self.timeout, stream=True)
-        response.raise_for_status()
-
-        for line in response.iter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            content, thinking = self._parse_stream_chunk(chunk)
-            if thinking:
-                yield ChatStreamChunk(kind="thinking", content=thinking)
-            if content:
-                yield ChatStreamChunk(kind="response", content=content)
-            if chunk.get("done"):
-                break
+        messages = self._build_messages(message, system_prompt, history)
+        yield from self.chat_messages_stream(messages, think=think)
 
     def health_check(self) -> bool:
         """Check if the Ollama server is reachable."""

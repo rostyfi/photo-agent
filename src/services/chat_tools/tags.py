@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from src.services.chat_response import ChatResponse
 from src.services.chat_tools.base import BaseTool, ToolMetadata
@@ -30,7 +30,34 @@ class TagsTool(BaseTool):
         usage="/tags [topic]",
         requires_folder=True,
         arg_pattern=r"^/tags\s+",
+        tool_description=(
+            "List the extracted photo tags with their photo counts, optionally filtered to tags related "
+            "to a topic. Requires a folder to be selected."
+        ),
     )
+
+    parameters_schema: ClassVar[dict] = {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": "Optional topic/keyword to filter tags by (e.g. 'sport', 'animals'). Omit to list all tags.",
+            },
+        },
+        "required": [],
+    }
+
+    def command_from_arguments(self, arguments: dict | None = None) -> str:
+        """Build the /tags command from structured tool-call arguments.
+
+        Args:
+            arguments: The parsed arguments (optional ``topic``).
+
+        Returns:
+            The equivalent slash command (e.g. ``/tags sport`` or ``/tags``).
+        """
+        topic = str((arguments or {}).get("topic") or "").strip()
+        return f"{self.metadata.command} {topic}" if topic else self.metadata.command
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:
         """Execute the tags tool.
@@ -206,7 +233,35 @@ class TagTool(BaseTool):
         usage="/tag <tagname>",
         requires_folder=True,
         arg_pattern=r"^/tag\s+",
+        tool_description=(
+            "Show photos that have a specific exact tag (e.g. 'nature') along with related tags. Use only "
+            "when the user names an exact tag they know exists; for subject searches use find instead. "
+            "Requires a folder to be selected."
+        ),
     )
+
+    parameters_schema: ClassVar[dict] = {
+        "type": "object",
+        "properties": {
+            "tag": {
+                "type": "string",
+                "description": "The exact tag name to show photos for, e.g. 'nature'. Comma-separated names chain with AND.",
+            },
+        },
+        "required": ["tag"],
+    }
+
+    def command_from_arguments(self, arguments: dict | None = None) -> str:
+        """Build the /tag command from structured tool-call arguments.
+
+        Args:
+            arguments: The parsed arguments (``tag`` name).
+
+        Returns:
+            The equivalent slash command (e.g. ``/tag nature``).
+        """
+        tag = str((arguments or {}).get("tag") or "").strip()
+        return f"{self.metadata.command} {tag}" if tag else self.metadata.command
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:
         """Execute the tag tool to show photos with a specific tag.

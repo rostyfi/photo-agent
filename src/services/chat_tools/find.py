@@ -1,7 +1,9 @@
 """Find tool - Finds photos matching description using vector search."""
 
+import contextlib
 import logging
 import re
+from typing import ClassVar
 
 from src.date_filter import parse_date_expression
 from src.services.chat_response import ChatResponse
@@ -39,7 +41,62 @@ class FindTool(BaseTool):
         usage="/find <number> <description> [@<date>]",
         requires_folder=True,
         arg_pattern=r"^/find\s+",
+        tool_description=(
+            "Search photos by a visual description or subject (e.g. 'cats', 'dogs running on a beach'). "
+            "Use this for any 'show me photos of X' where X is a subject or description, NOT an exact "
+            "tag name. Use the date parameter when the user mentions WHEN the photo was taken (e.g. "
+            "'last summer', 'summer 2024', 'January 2024', '2023') and the limit parameter when the user "
+            "asks for a specific number of photos. Requires a folder to be selected."
+        ),
     )
+
+    parameters_schema: ClassVar[dict] = {
+        "type": "object",
+        "properties": {
+            "description": {
+                "type": "string",
+                "description": "Visual description or subject to search for, e.g. 'cats', 'dogs running'.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of photos to return (default: 10). Use when the user specifies a number.",
+            },
+            "date": {
+                "type": "string",
+                "description": (
+                    "Optional natural-language date filter for when the photo was taken, "
+                    "e.g. 'last summer', 'summer 2024', 'January 2024', '2023'."
+                ),
+            },
+        },
+        "required": ["description"],
+    }
+
+    def command_from_arguments(self, arguments: dict | None = None) -> str:
+        """Build the /find command from structured tool-call arguments.
+
+        Args:
+            arguments: The parsed arguments (``description``, optional
+                ``limit`` and ``date``).
+
+        Returns:
+            The equivalent slash command (e.g. ``/find 5 cats @last summer``).
+        """
+        args = arguments or {}
+        description = str(args.get("description") or "").strip()
+        if not description:
+            # Let execute() report the missing description.
+            return self.metadata.command
+        parts = [self.metadata.command]
+        limit = args.get("limit")
+        if limit is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                parts.append(str(int(limit)))
+        parts.append(description)
+        date = str(args.get("date") or "").strip()
+        if date:
+            parts.append(f"@{date}")
+        return " ".join(parts)
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:
         """Execute the find tool.

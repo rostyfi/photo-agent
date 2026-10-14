@@ -18,6 +18,10 @@ class ChatResponse:
         sender: Who sent the response (default: "assistant")
         model: The model that generated the response (default: "unknown")
         response_type: Optional type classifier (e.g., "photos", "error")
+        thinking: Optional model reasoning trace, surfaced when debug reasoning is on.
+        tools_called: Names of tools the LLM invoked implicitly (native tool
+            calling) to produce this response, in call order. None for direct
+            slash commands and plain chat answers.
     """
 
     status: str
@@ -27,3 +31,5 @@ class ChatResponse:
     response_type: str | None = None
     # Optional model reasoning trace, surfaced when debug reasoning is on.
     thinking: str | None = None
+    # Tools the LLM invoked implicitly (native tool calling), in call order.
+    tools_called: list | None = None

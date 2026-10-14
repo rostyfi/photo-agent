@@ -14,6 +14,10 @@ class ScanTool(BaseTool):
         help_text="/scan - Scans a folder for photos",
         usage="/scan",
         requires_folder=True,
+        tool_description=(
+            "Scan the current folder and report how many photos are processable and how many are pending. "
+            "Requires a folder to be selected."
+        ),
     )
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:

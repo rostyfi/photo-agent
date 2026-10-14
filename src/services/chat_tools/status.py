@@ -34,6 +34,10 @@ class StatusTool(BaseTool):
         help_text="/status - Checks the status of active processing jobs",
         usage="/status",
         requires_folder=False,  # Can work with or without folder
+        tool_description=(
+            "Show the batch processing status for the current folder (running/done/aborted, progress, "
+            "and timing statistics)."
+        ),
     )
 
     def execute(self, folder_path: str | None = None, args: str | None = None) -> ChatResponse:

@@ -32,7 +32,7 @@ For detailed project documentation, see `README.md`.
 - **LLM backends:** Subclass `BasePhotoExtractor` from `src.interfaces`, implement `extract_b64()`, `health_check()`, register via `plugins.llm.registry.register_backend()` in `plugins/llm/backends/<name>/__init__.py`. Auto-discovered by `factory.py` via `pkgutil`.
 - **Image format plugins:** Create package under `plugins/formats/<name>/`, implement `read_*_bytes(path) -> bytes`, call `register_format()` from `plugins.formats.registry` in `__init__.py`. Auto-discovered by `read_image_bytes()`.
 - **Embedding backends:** Create package under `plugins/embeddings/backends/<name>/`, extend `BaseEmbeddingGenerator`, register in `__init__.py`. Auto-discovered by embedding registry.
-- **Chat Tools:** Create class in `src/services/chat_tools/`, extend `BaseTool`, implement `handle()`, use `@register_tool` decorator. Auto-discovered via `loader.py`.
+- **Chat Tools:** Create a class in `src/services/chat_tools/`, extend `BaseTool` from `src.services.chat_tools.base`, declare `metadata` (`ToolMetadata`), and implement `execute()`. Auto-discovered via `loader.py`. Tools are exposed to the LLM both as slash commands (typed directly in chat) and as native Ollama tool calls (implicit, from natural language): tools that take arguments override `parameters_schema` (JSON schema) and `command_from_arguments()` (structured args → slash command), and set `metadata.tool_description` for the model-facing description.
 
 ### Configuration
 
@@ -71,8 +71,8 @@ Environment variables (full details in `README.md`):
 | `src/simple_processing_tracker.py` | `SimpleProcessingTracker` for SQLite-based progress tracking |
 | `src/folder_settings.py` | Per-folder `settings.json` store: `apply_folder_settings()`, `write_folder_settings()`, `get_batch_concurrency()` |
 | `src/sidecar/database/db.py` | `FeaturesDatabase` — SQLite schema and operations |
-| `src/services/chat.py` | `ChatService` — centralized chat operations with tool support |
-| `src/services/chat_tools/` | Tool handlers (`/about`, `/count`, `/find`, `/process`, `/scan`, `/status`, `/tools`) |
+| `src/services/chat.py` | `ChatService` — centralized chat operations with native tool-calling support |
+| `src/services/chat_tools/` | Tool handlers (`/about`, `/count`, `/find`, `/process`, `/scan`, `/status`, `/tags`, `/tag`, `/tools`) — exposed to the LLM as slash commands and as native Ollama tool specs |
 | `src/embeddings/` | `BaseEmbeddingGenerator`, `OllamaEmbeddingGenerator`, registry |
 | `src/metadata.py` | EXIF, IPTC, XMP extraction utilities |
 | `src/discovery.py` | `PhotoList` — recursive image file discovery |
