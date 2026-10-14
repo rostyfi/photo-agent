@@ -108,7 +108,98 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
             result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
 
         self.assertTrue(result.success)
-        self.assertIsNone(result.parsed)
+        # Non-JSON response: raw text stored as description fallback
+        self.assertIsNotNone(result.parsed)
+        self.assertEqual(result.parsed, {"description": "not valid json at all"})
+
+    def test_extract_retries_with_stricter_prompt_on_invalid_json(self):
+        """When first attempt returns non-JSON, retry with stricter prompt; retry succeeds."""
+        # First call: non-JSON response. Second call: valid JSON.
+        first_response = MagicMock()
+        first_response.raise_for_status.return_value = None
+        first_response.json.return_value = {
+            "response": "This is a photo of a cat.",
+            "done": True,
+            "total_duration": 1_000_000_000,
+            "eval_count": 10,
+        }
+        second_response = MagicMock()
+        second_response.raise_for_status.return_value = None
+        second_response.json.return_value = {
+            "response": '{"description": "A cat sitting on a mat.", "tags": ["cat", "indoor"]}',
+            "done": True,
+            "total_duration": 2_000_000_000,
+            "eval_count": 20,
+        }
+
+        with patch.object(self.extractor._session, "post", side_effect=[first_response, second_response]) as mock_post:
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertTrue(result.success)
+        # Retry result should have valid parsed JSON
+        self.assertIsNotNone(result.parsed)
+        self.assertEqual(result.parsed["description"], "A cat sitting on a mat.")
+        self.assertEqual(result.parsed["tags"], ["cat", "indoor"])
+        # Two calls: first attempt + retry
+        self.assertEqual(mock_post.call_count, 2)
+
+    def test_extract_retry_both_fail_json_falls_back_to_raw_text(self):
+        """When both attempts return non-JSON, fall back to raw text from first attempt."""
+        first_response = MagicMock()
+        first_response.raise_for_status.return_value = None
+        first_response.json.return_value = {
+            "response": "First attempt text.",
+            "done": True,
+            "total_duration": 1_000_000_000,
+            "eval_count": 10,
+        }
+        second_response = MagicMock()
+        second_response.raise_for_status.return_value = None
+        second_response.json.return_value = {
+            "response": "Second attempt text.",
+            "done": True,
+            "total_duration": 2_000_000_000,
+            "eval_count": 20,
+        }
+
+        with patch.object(self.extractor._session, "post", side_effect=[first_response, second_response]):
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertTrue(result.success)
+        # Falls back to first attempt's raw text
+        self.assertEqual(result.parsed, {"description": "First attempt text."})
+
+    def test_extract_no_retry_when_json_valid(self):
+        """No retry when the first attempt returns valid JSON."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "response": '{"description": "test", "tags": ["a"]}',
+            "done": True,
+            "total_duration": 1_000_000_000,
+            "eval_count": 10,
+        }
+
+        with patch.object(self.extractor._session, "post", return_value=mock_response) as mock_post:
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.parsed, {"description": "test", "tags": ["a"]})
+        # Only one call — no retry needed
+        self.assertEqual(mock_post.call_count, 1)
+
+    def test_extract_no_retry_on_failure(self):
+        """No retry when the first attempt fails (success=False)."""
+        with patch.object(
+            self.extractor._session,
+            "post",
+            side_effect=requests.exceptions.Timeout("timed out"),
+        ) as mock_post:
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertFalse(result.success)
+        # Only one call — no retry on network errors
+        self.assertEqual(mock_post.call_count, 1)
 
     def test_extract_timeout(self):
         with patch.object(
@@ -452,8 +543,10 @@ class TestOllamaChatClient(unittest.TestCase):
                 {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"desc'}}]}, "done": False}
             ),
             json.dumps(
-                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": 'ription": "cats"}'}}]},
-                 "done": False}
+                {
+                    "message": {"tool_calls": [{"function": {"name": "find", "arguments": 'ription": "cats"}'}}]},
+                    "done": False,
+                }
             ),
             json.dumps({"message": {"content": ""}, "done": True}),
         ]
@@ -469,12 +562,16 @@ class TestOllamaChatClient(unittest.TestCase):
         # the last fragment is used when the concatenation does not parse.
         lines = [
             json.dumps(
-                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "ca'}}]},
-                 "done": False}
+                {
+                    "message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "ca'}}]},
+                    "done": False,
+                }
             ),
             json.dumps(
-                {"message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "cats"}'}}]},
-                 "done": False}
+                {
+                    "message": {"tool_calls": [{"function": {"name": "find", "arguments": '{"description": "cats"}'}}]},
+                    "done": False,
+                }
             ),
             json.dumps({"message": {"content": ""}, "done": True}),
         ]

@@ -100,6 +100,14 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
             payload["options"] = options
         return payload
 
+    # Stricter prompt used when the first attempt returns non-JSON text.
+    _JSON_RETRY_PROMPT = (
+        "You MUST respond with ONLY a valid JSON object. Do NOT include any explanation, "
+        "markdown formatting, or text before or after the JSON. "
+        'Format: {"description": "...", "subjects": [...], "objects": [...], '
+        '"colors": [...], "setting": "...", "mood": "...", "tags": [...]}.'
+    )
+
     def extract_b64(
         self,
         image_b64: str,
@@ -108,13 +116,56 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
     ) -> ProcessingResult:
         """Extract features from a base64-encoded image via the Ollama API.
 
+        Makes a first attempt with the given prompt. If the model returns
+        non-JSON text (parsed is None but response is non-empty), retries once
+        with a stricter JSON-only prompt. If the retry also fails to produce
+        valid JSON, the raw response text is stored as the description so the
+        database always has a usable description.
+
         Returns a ProcessingResult with success/error details and the parsed
         JSON response (if the model returned valid JSON).
         """
         used_prompt = prompt or self.default_prompt or DEFAULT_PROMPT
+        result = self._extract_once(image_b64, used_prompt, options)
 
+        # Retry with a stricter JSON-only prompt when the first attempt
+        # returned non-JSON text.
+        if result.success and result.parsed is None and result.response and result.response.strip():
+            logger.info("Retrying with stricter JSON-only prompt (first attempt was not valid JSON)")
+            retry_result = self._extract_once(image_b64, self._JSON_RETRY_PROMPT, options)
+            if retry_result.success and retry_result.parsed is not None:
+                # Retry produced valid JSON — prefer it.
+                retry_result.prompt = used_prompt  # report the original prompt
+                return retry_result
+            # Retry also failed to produce JSON — fall through and apply
+            # the raw-text fallback to the first result below.
+
+        # Raw-text fallback: if the model returned non-JSON text, store it
+        # as the description so the database has a usable value and embeddings
+        # can be generated from it.
+        if result.success and result.parsed is None and result.response and result.response.strip():
+            raw_text = result.response.strip()
+            result.parsed = {"description": raw_text}
+            logger.warning(
+                "Model response was not valid JSON; stored raw text as description (%d chars)",
+                len(raw_text),
+            )
+
+        return result
+
+    def _extract_once(
+        self,
+        image_b64: str,
+        prompt: str,
+        options: dict | None = None,
+    ) -> ProcessingResult:
+        """Single extraction attempt against the Ollama /api/generate endpoint.
+
+        Tries non-streaming first, falls back to streaming. Parses JSON and
+        applies the raw-text fallback when JSON parsing fails.
+        """
         # Try non-streaming first, fall back to streaming if needed
-        payload = self._build_payload(image_b64, used_prompt, stream=False, options=options)
+        payload = self._build_payload(image_b64, prompt, stream=False, options=options)
         url = f"{self.base_url}/api/generate"
 
         try:
@@ -132,7 +183,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                 result = ProcessingResult(
                     success=True,
                     model=self.model,
-                    prompt=used_prompt,
+                    prompt=prompt,
                     response=cleaned_response,
                     done=data.get("done", False),
                     total_duration_ms=data.get("total_duration", 0) / 1_000_000,
@@ -141,7 +192,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
             else:
                 # Non-streaming returned empty/incomplete, try streaming
                 logger.info("Non-streaming returned incomplete response, trying streaming mode")
-                payload_stream = self._build_payload(image_b64, used_prompt, stream=True, options=options)
+                payload_stream = self._build_payload(image_b64, prompt, stream=True, options=options)
                 response_stream = self._session.post(url, json=payload_stream, timeout=self.timeout, stream=True)
                 response_stream.raise_for_status()
 
@@ -182,7 +233,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                     return ProcessingResult(
                         success=False,
                         model=self.model,
-                        prompt=used_prompt,
+                        prompt=prompt,
                         error="Model returned empty response in both streaming and non-streaming modes",
                         error_code=ErrorCode.INVALID_RESPONSE.value,
                     )
@@ -190,7 +241,7 @@ class OllamaPhotoExtractor(BasePhotoExtractor):
                 result = ProcessingResult(
                     success=True,
                     model=self.model,
-                    prompt=used_prompt,
+                    prompt=prompt,
                     response=cleaned_response,
                     done=done,
                     total_duration_ms=total_duration / 1_000_000 if total_duration > 0 else 0,

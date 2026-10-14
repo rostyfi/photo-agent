@@ -305,6 +305,78 @@ class TestSaveExtraction:
 
             assert rows == [("single",)]
 
+    def test_falls_back_to_response_text_when_parsed_missing(self):
+        """When parsed is not a dict but response has text, use it as description."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "features.db"
+            db = FeaturesDatabase(db_path)
+            db.save_extraction(
+                "/photos/a.jpg",
+                {
+                    "success": True,
+                    "parsed": None,
+                    "response": "A photo of a cat on a windowsill.",
+                },
+            )
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute(
+                "SELECT description FROM extracted_features WHERE image_path = ?",
+                ("/photos/a.jpg",),
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            assert row[0] == "A photo of a cat on a windowsill."
+
+    def test_falls_back_to_response_text_when_parsed_not_dict(self):
+        """When parsed is a non-dict value but response has text, use it as description."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "features.db"
+            db = FeaturesDatabase(db_path)
+            db.save_extraction(
+                "/photos/b.jpg",
+                {
+                    "success": True,
+                    "parsed": "not a dict",
+                    "response": "Sunset over mountains.",
+                },
+            )
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute(
+                "SELECT description FROM extracted_features WHERE image_path = ?",
+                ("/photos/b.jpg",),
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            assert row[0] == "Sunset over mountains."
+
+    def test_no_fallback_when_response_empty(self):
+        """When parsed is missing and response is empty/whitespace, description stays NULL."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "features.db"
+            db = FeaturesDatabase(db_path)
+            db.save_extraction(
+                "/photos/c.jpg",
+                {
+                    "success": True,
+                    "parsed": None,
+                    "response": "  ",
+                },
+            )
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute(
+                "SELECT description FROM extracted_features WHERE image_path = ?",
+                ("/photos/c.jpg",),
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            assert row[0] is None
+
 
 class TestQueryHelpers:
     def test_list_all_tags(self):

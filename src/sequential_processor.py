@@ -343,11 +343,22 @@ class SequentialProcessor:
                 try:
                     result = self.process_image(image_path, prompt=prompt)
 
-                    # Mark as completed (result already saved in process_image)
-                    tracker.mark_completed(image_path)
-
-                    all_results.append(result.as_dict())
-                    successes += 1
+                    if result.success:
+                        tracker.mark_completed(image_path)
+                        all_results.append(result.as_dict())
+                        successes += 1
+                    else:
+                        # Extraction failed (empty response, timeout, etc.) —
+                        # mark as failed so resume will retry it.
+                        logger.warning(
+                            "Extraction failed for %s: %s (%s)",
+                            image_path,
+                            result.error,
+                            result.error_code,
+                        )
+                        tracker.mark_failed(image_path, result.error_code, result.error)
+                        all_results.append(result.as_dict())
+                        failures += 1
                 except Exception as e:
                     logger.error("Failed to process %s: %s", image_path, e)
 
@@ -398,9 +409,21 @@ class SequentialProcessor:
         logger.info("Processing: %s", image_path)
         try:
             result = self.process_image(image_path, prompt=prompt)
-            with self._db_lock:
-                tracker.mark_completed(image_path)
-            return result.as_dict(), True
+            if result.success:
+                with self._db_lock:
+                    tracker.mark_completed(image_path)
+                return result.as_dict(), True
+            else:
+                # Extraction failed — mark as failed so resume will retry.
+                logger.warning(
+                    "Extraction failed for %s: %s (%s)",
+                    image_path,
+                    result.error,
+                    result.error_code,
+                )
+                with self._db_lock:
+                    tracker.mark_failed(image_path, result.error_code, result.error)
+                return result.as_dict(), False
         except Exception as e:
             logger.error("Failed to process %s: %s", image_path, e)
             error_result = ProcessingResult(

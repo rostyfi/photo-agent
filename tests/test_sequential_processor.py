@@ -209,6 +209,101 @@ class TestErrorHandling:
         # Should have some failures
         assert result["failures"] > 0
 
+    def test_failed_extraction_marks_tracker_failed(self, temp_folder):
+        """When extract_b64 returns success=False (not raises), tracker marks as failed."""
+        mock_extractor = MagicMock()
+        mock_extractor.extract_b64.return_value = ProcessingResult(
+            success=False,
+            error="Model returned empty response",
+            error_code="invalid_response",
+            model="test-model",
+        )
+
+        processor = SequentialProcessor(mock_extractor)
+        image_path = Path(temp_folder) / "test.jpg"
+        image_path.write_bytes(b"test image data")
+
+        with patch("src.sequential_processor.encode_image_file", return_value="base64_test_data"):
+            result = processor.process_paths([str(image_path)], resume=False)
+
+        assert result["successes"] == 0
+        assert result["failures"] == 1
+
+        # Tracker should mark as failed, not completed
+        from src.simple_processing_tracker import SimpleProcessingTracker
+
+        tracker = SimpleProcessingTracker(temp_folder)
+        assert str(image_path) not in tracker.get_processed_files() or tracker.is_processed(str(image_path))
+        failed = tracker.get_failed_files()
+        assert len(failed) == 1
+        assert failed[0]["image_path"] == str(image_path)
+        stats = tracker.get_stats()
+        assert stats["failed"] == 1
+        assert stats["completed"] == 0
+
+    def test_failed_extraction_retried_on_resume(self, temp_folder):
+        """A failed extraction should be retried on the next resume run."""
+        mock_extractor = MagicMock()
+        # First call: fail. Second call: succeed.
+        mock_extractor.extract_b64.side_effect = [
+            ProcessingResult(
+                success=False,
+                error="Model returned empty response",
+                error_code="invalid_response",
+                model="test-model",
+            ),
+            ProcessingResult(
+                success=True,
+                model="test-model",
+                response='{"description": "retried"}',
+                parsed={"description": "retried"},
+            ),
+        ]
+
+        processor = SequentialProcessor(mock_extractor)
+        image_path = Path(temp_folder) / "test.jpg"
+        image_path.write_bytes(b"test image data")
+
+        with patch("src.sequential_processor.encode_image_file", return_value="base64_test_data"):
+            # First run: fails
+            result1 = processor.process_paths([str(image_path)], resume=False)
+            assert result1["failures"] == 1
+
+            # Second run with resume=True: should NOT skip the failed image
+            result2 = processor.process_paths([str(image_path)], resume=True)
+            assert result2["skipped"] == 0
+            assert result2["successes"] == 1
+
+    def test_concurrent_failed_extraction_marks_failed(self, temp_folder):
+        """Concurrent path: success=False result should mark tracker as failed."""
+        mock_extractor = MagicMock()
+        mock_extractor.extract_b64.return_value = ProcessingResult(
+            success=False,
+            error="timeout",
+            error_code="timeout",
+            model="test-model",
+        )
+
+        processor = SequentialProcessor(mock_extractor)
+        paths = []
+        for i in range(2):
+            p = Path(temp_folder) / f"img_{i}.jpg"
+            p.write_bytes(b"data")
+            paths.append(str(p))
+
+        with patch("src.sequential_processor.encode_image_file", return_value="base64_test_data"):
+            result = processor.process_paths(paths, resume=False, concurrency=2)
+
+        assert result["successes"] == 0
+        assert result["failures"] == 2
+
+        from src.simple_processing_tracker import SimpleProcessingTracker
+
+        tracker = SimpleProcessingTracker(temp_folder)
+        stats = tracker.get_stats()
+        assert stats["failed"] == 2
+        assert stats["completed"] == 0
+
 
 class TestBatchConcurrency:
     """Tests for concurrent (batch) processing in process_paths."""
@@ -350,9 +445,7 @@ class TestBatchConcurrency:
         processor = SequentialProcessor(mock_extractor)
         with patch("src.sequential_processor.encode_image_file") as mock_encode:
             mock_encode.return_value = "base64_test_data"
-            processor.process_paths(
-                paths, prompt="p", resume=False, concurrency=2, progress_callback=capture
-            )
+            processor.process_paths(paths, prompt="p", resume=False, concurrency=2, progress_callback=capture)
 
         # One progress call per completed image
         assert len(progress_calls) == 4
@@ -360,4 +453,3 @@ class TestBatchConcurrency:
         assert all(total == 4 for _, total in progress_calls)
         # Processed counts are 1..4 in some order
         assert sorted(processed for processed, _ in progress_calls) == [1, 2, 3, 4]
-

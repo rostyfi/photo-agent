@@ -88,10 +88,13 @@ class SimpleProcessingTracker:
             raise
 
     def get_processed_files(self) -> set[str]:
-        """Get all image paths that have been processed (completed or failed).
+        """Get all image paths that have been successfully processed.
+
+        Only entries with status ``completed`` are returned. Failed entries
+        are excluded so that resume retries them.
 
         Returns:
-            Set of image paths that have been processed.
+            Set of image paths that have been successfully processed.
         """
         if not self._db_path.exists():
             return set()
@@ -100,8 +103,12 @@ class SimpleProcessingTracker:
         try:
             processed: set[str] = set()
 
-            # Get from processing_tracker table
-            cursor = conn.execute(f"SELECT image_path FROM {TABLE_PROCESSING_TRACKER}")
+            # Get completed entries from processing_tracker table.
+            # Failed entries are deliberately excluded so resume retries them.
+            cursor = conn.execute(
+                f"SELECT image_path FROM {TABLE_PROCESSING_TRACKER} WHERE status = ?",
+                (STATUS_COMPLETED,),
+            )
             processed.update(row[0] for row in cursor.fetchall())
 
             # Also check raw_features table for backward compatibility

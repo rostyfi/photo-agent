@@ -598,7 +598,12 @@ class FeaturesDatabase:
                 else:
                     tags = []
             else:
-                description = subjects = objects = colors = setting = mood = None
+                # parsed is None or not a dict — fall back to the raw response
+                # text so the description column is not NULL when the model
+                # produced usable text that failed JSON parsing.
+                raw_response = result.get("response")
+                description = raw_response.strip() if isinstance(raw_response, str) and raw_response.strip() else None
+                subjects = objects = colors = setting = mood = None
                 tags = []
 
             updated_at = datetime.now(timezone.utc).isoformat()
