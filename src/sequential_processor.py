@@ -39,6 +39,58 @@ from src.utils import encode_image_file
 logger = logging.getLogger(__name__)
 
 
+def _coerce_description_text(value: Any) -> str | None:
+    """Coerce a parsed LLM field to plain text suitable for embedding.
+
+    Vision models don't always obey the JSON schema: ``description`` may come
+    back as a list or another type. Join lists and stringify scalars so the
+    embedding generator always receives a string.
+
+    Returns:
+        The coerced text, or ``None`` when there is nothing usable.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (list, tuple)):
+        parts = [str(item).strip() for item in value if item is not None and str(item).strip()]
+        return ", ".join(parts) or None
+    return str(value).strip() or None
+
+
+def _composite_description_text(parsed: dict) -> str | None:
+    """Build embeddable text from parsed fields when description/caption are empty.
+
+    Photos whose model response leaves ``description`` empty but fills in
+    subjects/objects/tags/etc. still get a searchable embedding this way.
+    """
+    parts = []
+    for key in ("subjects", "objects", "colors", "setting", "mood", "tags"):
+        text = _coerce_description_text(parsed.get(key))
+        if text:
+            parts.append(text)
+    return "; ".join(parts) or None
+
+
+def _extract_description_text(result: dict) -> str | None:
+    """Extract embeddable text from an extraction result dict.
+
+    Prefers the parsed ``description``/``caption``, falls back to the
+    remaining parsed fields, then to the raw response text.
+    """
+    parsed = result.get("parsed")
+    if isinstance(parsed, dict):
+        description = _coerce_description_text(parsed.get("description")) or _coerce_description_text(
+            parsed.get("caption")
+        )
+        return description or _composite_description_text(parsed)
+    response = result.get("response")
+    if isinstance(response, str):
+        return response.strip() or None
+    return None
+
+
 class SequentialProcessor:
     """
     Simple processor that processes images sequentially.
@@ -193,15 +245,12 @@ class SequentialProcessor:
         # Extract and save metadata
         self._extract_and_save_metadata(image_path)
 
-        # Generate and save embedding if enabled
-        if self.embedding_enabled and self._embedding_generator is not None and self._db is not None:
+        # Generate and save embedding if enabled (only for successful
+        # extractions — a failed extraction has no usable text to embed)
+        if result.success and self.embedding_enabled and self._embedding_generator is not None and self._db is not None:
             try:
                 # Get the description from the result
-                description = None
-                if result.parsed and isinstance(result.parsed, dict):
-                    description = result.parsed.get("description") or result.parsed.get("caption")
-                elif result.response:
-                    description = result.response
+                description = _extract_description_text(result.as_dict())
 
                 if description:
                     # Generate embedding from the description text
@@ -257,6 +306,8 @@ class SequentialProcessor:
             - skipped: Number of images skipped (already processed)
             - successes: Number of successful extractions
             - failures: Number of failed extractions
+            - embeddings_backfilled: Number of embeddings generated for
+              already-processed images missing them (resume backfill)
             - results: List of result dictionaries
         """
         total_found = len(paths)
@@ -279,6 +330,7 @@ class SequentialProcessor:
         skipped = 0
         successes = 0
         failures = 0
+        embeddings_backfilled = 0
 
         for folder, folder_paths in folder_groups.items():
             tracker = SimpleProcessingTracker(folder)
@@ -286,8 +338,13 @@ class SequentialProcessor:
             # Filter out already processed if resume is enabled
             if resume:
                 processed_set = tracker.get_processed_files()
+                skipped_paths = [p for p in folder_paths if p in processed_set]
                 paths_to_process = [p for p in folder_paths if p not in processed_set]
-                skipped += len(folder_paths) - len(paths_to_process)
+                skipped += len(skipped_paths)
+                # Skipped images may predate embedding generation (or use a
+                # different embedding model) — backfill missing embeddings
+                # from the stored extraction without re-running the LLM.
+                embeddings_backfilled += self.backfill_missing_embeddings(skipped_paths)
             else:
                 paths_to_process = folder_paths
 
@@ -388,6 +445,7 @@ class SequentialProcessor:
             "skipped": skipped,
             "successes": successes,
             "failures": failures,
+            "embeddings_backfilled": embeddings_backfilled,
             "results": all_results,
         }
 
@@ -457,8 +515,10 @@ class SequentialProcessor:
             logger.error(error_msg)
             return None, error_msg
 
-        # Check if description is available
-        if not description or not description.strip():
+        # Check if description is available (coerce first: models don't always
+        # obey the JSON schema and may return a list or other type)
+        text = _coerce_description_text(description)
+        if not text:
             error_msg = f"{EMBEDDING_NO_DESCRIPTION} (image: {image_path})"
             logger.warning(error_msg)
             return None, error_msg
@@ -466,7 +526,7 @@ class SequentialProcessor:
         # Generate the embedding
         logger.debug(LOG_EMBEDDING_GENERATION(image_path))
         try:
-            embedding = self._embedding_generator.generate_from_text(description, model=model_name)
+            embedding = self._embedding_generator.generate_from_text(text, model=model_name)
         except Exception as e:
             error_msg = f"Embedding generation failed for {image_path}: {e}. {VEC_REQUIRED}"
             logger.error(LOG_EMBEDDING_FAILED(image_path, e))
@@ -488,6 +548,47 @@ class SequentialProcessor:
             error_msg = f"Failed to save embedding for {image_path}: {e}. {VEC_REQUIRED}"
             logger.error(error_msg)
             return embedding, error_msg
+
+    def backfill_missing_embeddings(self, image_paths: list[str]) -> int:
+        """Generate embeddings for already-processed images that are missing them.
+
+        Used on resume runs: images skipped because they were already
+        processed may predate embedding generation (or were embedded with a
+        different model). The embedding is generated from the stored
+        extraction result, without re-running the LLM.
+
+        Args:
+            image_paths: Paths of already-processed images to check.
+
+        Returns:
+            Number of embeddings generated.
+        """
+        if not (self.embedding_enabled and self._embedding_generator is not None and self._db is not None):
+            return 0
+
+        backfilled = 0
+        for image_path in image_paths:
+            try:
+                if self._db.has_embedding(image_path, self.config.embedding_model):
+                    continue
+                result = self._db.get_extraction(image_path)
+                if not result:
+                    continue
+                description = _extract_description_text(result)
+                if not description:
+                    logger.debug("No stored description for %s; skipping embedding backfill", image_path)
+                    continue
+                _embedding, error = self._generate_and_save_embedding(
+                    image_path, description, self.config.embedding_model
+                )
+                if error:
+                    logger.warning("Embedding backfill failed for %s: %s", image_path, error)
+                else:
+                    backfilled += 1
+                    logger.info("Backfilled embedding for %s", image_path)
+            except Exception as e:
+                logger.warning("Embedding backfill error for %s: %s", image_path, e)
+        return backfilled
 
     def _save_result(self, result: ProcessingResult) -> None:
         """Save a processing result to database."""
@@ -515,6 +616,7 @@ def process_image(
     extractor: BasePhotoExtractor,
     prompt: str | None = None,
     folder: str | None = None,
+    config: ProcessingConfig | None = None,
 ) -> ProcessingResult:
     """
     Process a single image file.
@@ -526,11 +628,12 @@ def process_image(
         extractor: The LLM extractor to use.
         prompt: Optional prompt override.
         folder: Optional folder path for database operations (required for embedding generation).
+        config: Optional processing configuration (embedding settings, connection).
 
     Returns:
         ProcessingResult with extraction results.
     """
-    processor = SequentialProcessor(extractor, folder=folder)
+    processor = SequentialProcessor(extractor, config=config, folder=folder)
     return processor.process_image(image_path, prompt=prompt)
 
 
@@ -542,6 +645,7 @@ def process_paths(
     resume: bool = True,
     folder: str | None = None,
     concurrency: int | None = None,
+    config: ProcessingConfig | None = None,
 ) -> dict[str, Any]:
     """
     Process a list of image paths.
@@ -555,9 +659,39 @@ def process_paths(
         resume: If True, skip already-processed images.
         folder: Optional folder path for database operations (required for embedding generation).
         concurrency: Optional number of images to process in parallel (default: sequential).
+        config: Optional processing configuration (embedding settings, connection).
 
     Returns:
         Dictionary with processing statistics.
     """
-    processor = SequentialProcessor(extractor, folder=folder)
+    processor = SequentialProcessor(extractor, config=config, folder=folder)
     return processor.process_paths(paths, prompt=prompt, resume=resume, concurrency=concurrency)
+
+
+def backfill_embeddings(
+    paths: list[str],
+    extractor: BasePhotoExtractor,
+    folder: str | None = None,
+    config: ProcessingConfig | None = None,
+    embedding_enabled: bool = True,
+) -> int:
+    """Generate embeddings for already-processed images that are missing them.
+
+    Standalone wrapper around
+    :meth:`SequentialProcessor.backfill_missing_embeddings` for callers (e.g.
+    the CLI resume path) that filter already-processed images themselves
+    instead of passing ``resume=True``.
+
+    Args:
+        paths: Paths of already-processed images to check.
+        extractor: The LLM extractor (only used to construct the processor;
+            no extraction is performed).
+        folder: Folder path for database operations (required for embeddings).
+        config: Optional processing configuration (embedding settings).
+        embedding_enabled: Whether to generate embeddings (default: True).
+
+    Returns:
+        Number of embeddings generated.
+    """
+    processor = SequentialProcessor(extractor, config=config, embedding_enabled=embedding_enabled, folder=folder)
+    return processor.backfill_missing_embeddings(paths)

@@ -171,6 +171,22 @@ def main():
 
         sys.exit(0)
 
+    # Apply CLI overrides to the processing configuration so embedding
+    # generation uses the same connection and model settings as extraction
+    # (--no-embeddings/--embedding-model/--embedding-backend/--host/--port
+    # previously only affected extraction, not the embedding generator).
+    processing_config = config.to_processing_config()
+    processing_config.host = args.host
+    processing_config.port = args.port
+    processing_config.timeout = args.timeout
+    processing_config.default_prompt = args.prompt or config.default_prompt
+    if args.no_embeddings:
+        processing_config.embedding_enabled = False
+    if args.embedding_model:
+        processing_config.embedding_model = args.embedding_model
+    if args.embedding_backend:
+        processing_config.embedding_backend = args.embedding_backend
+
     # Create extractor
     extractor = create_extractor(
         backend="dry_run" if args.dry_run else args.backend,
@@ -192,11 +208,13 @@ def main():
 
     # If resume is enabled, exclude already processed images
     if args.resume:
+        from src.sequential_processor import backfill_embeddings
+
         groups = defaultdict(list)
         for p in image_paths:
             groups[_parent_dir(p)].append(p)
 
-        filtered = []
+        filtered: list[str] = []
         skipped = 0
         for folder, paths in groups.items():
             try:
@@ -207,11 +225,18 @@ def main():
             except Exception:
                 processed = set()
 
-            for p in paths:
-                if p in processed:
-                    skipped += 1
-                else:
-                    filtered.append(p)
+            folder_skipped = [p for p in paths if p in processed]
+            skipped += len(folder_skipped)
+            filtered.extend(p for p in paths if p not in processed)
+
+            # Already-processed images may be missing embeddings (e.g. they
+            # were processed before embeddings were enabled, or with another
+            # embedding model) — backfill from the stored extraction without
+            # re-running the LLM.
+            if folder_skipped and processing_config.embedding_enabled:
+                backfilled = backfill_embeddings(folder_skipped, extractor, folder=folder, config=processing_config)
+                if backfilled:
+                    logger.info("Backfilled %d embedding(s) for already-processed images in %s", backfilled, folder)
 
         if skipped:
             logger.info("Skipping %d already-processed image(s) (via simple tracker)", skipped)
@@ -311,6 +336,7 @@ def main():
             resume=False,  # We already filtered by resume above
             folder=folder,  # Pass folder for embedding generation
             concurrency=folder_concurrency,
+            config=processing_config,
         )
         all_results.extend(result["results"])
         processed_count += result["processed"]

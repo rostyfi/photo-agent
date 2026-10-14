@@ -422,13 +422,18 @@ class FeaturesDatabase:
         except (sqlite3.OperationalError, sqlite3.DatabaseError):
             pass
 
-        # Create vec0 virtual table
+        # Create vec0 virtual table. Cosine distance makes ``1 - distance`` a
+        # true cosine similarity score; the model_name auxiliary column lets
+        # callers restrict search to vectors from one embedding model. Tables
+        # created before these options existed keep their original definition
+        # (this method only creates the table when missing).
         try:
             conn.execute(
                 f"""
                 CREATE VIRTUAL TABLE vec_embeddings USING vec0(
                     image_path TEXT,
-                    embedding float[{VEC_TABLE_DIMENSION}]
+                    embedding float[{VEC_TABLE_DIMENSION}] distance_metric=cosine,
+                    model_name TEXT
                 )
                 """
             )
@@ -456,7 +461,7 @@ class FeaturesDatabase:
         dim = VEC_TABLE_DIMENSION
         if len(vector) < dim:
             padded = vector + [0.0] * (dim - len(vector))
-            logger.warning("Padding vector from %s to %s dimensions", len(vector), dim)
+            logger.debug("Padding vector from %s to %s dimensions", len(vector), dim)
             return padded
         if len(vector) > dim:
             truncated = vector[:dim]
@@ -464,8 +469,29 @@ class FeaturesDatabase:
             return truncated
         return vector
 
-    def save_to_vec_table(self, conn: sqlite3.Connection, image_path: str, vector: list[float]) -> bool:
-        """Save a vector to the vec_embeddings virtual table."""
+    @staticmethod
+    def _vec_table_has_model_column(conn: sqlite3.Connection) -> bool:
+        """Return True if the vec_embeddings table has a ``model_name`` column.
+
+        Tables created before the model column existed only store
+        ``image_path`` and ``embedding``; writes and filters must adapt.
+        """
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(vec_embeddings)")}
+        except sqlite3.DatabaseError:
+            return False
+        return "model_name" in columns
+
+    def save_to_vec_table(
+        self, conn: sqlite3.Connection, image_path: str, vector: list[float], model_name: str | None = None
+    ) -> bool:
+        """Save a vector to the vec_embeddings virtual table.
+
+        The table holds at most one (latest) vector per image so that rows
+        from different embedding models never mix: when the table has a
+        ``model_name`` column, existing rows for the image are replaced and
+        the row is tagged with the producing model.
+        """
         # Check if table exists
         result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_embeddings'").fetchone()
 
@@ -482,20 +508,31 @@ class FeaturesDatabase:
 
         vector_str = self._format_vector_for_vec(vector_padded)
 
-        # Check if entry already exists (parameterized to avoid SQL injection)
-        existing = conn.execute("SELECT 1 FROM vec_embeddings WHERE image_path = ?", (image_path,)).fetchone()
+        has_model_column = self._vec_table_has_model_column(conn)
 
         try:
-            if existing:
+            if has_model_column:
+                # One row per image: drop stale rows (e.g. written by another
+                # embedding model), then insert the current vector.
+                conn.execute("DELETE FROM vec_embeddings WHERE image_path = ?", (image_path,))
                 conn.execute(
-                    "UPDATE vec_embeddings SET embedding = ? WHERE image_path = ?",
-                    (vector_str, image_path),
+                    "INSERT INTO vec_embeddings (image_path, embedding, model_name) VALUES (?, ?, ?)",
+                    (image_path, vector_str, model_name),
                 )
             else:
-                conn.execute(
-                    "INSERT INTO vec_embeddings (image_path, embedding) VALUES (?, ?)",
-                    (image_path, vector_str),
-                )
+                # Legacy table without the model column (parameterized to
+                # avoid SQL injection).
+                existing = conn.execute("SELECT 1 FROM vec_embeddings WHERE image_path = ?", (image_path,)).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE vec_embeddings SET embedding = ? WHERE image_path = ?",
+                        (vector_str, image_path),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO vec_embeddings (image_path, embedding) VALUES (?, ?)",
+                        (image_path, vector_str),
+                    )
             conn.commit()
             return True
         except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
@@ -513,9 +550,22 @@ class FeaturesDatabase:
             return False
 
     def vec_find_similar(
-        self, conn: sqlite3.Connection, query_vector: list[float], limit: int = 10
+        self,
+        conn: sqlite3.Connection,
+        query_vector: list[float],
+        limit: int = 10,
+        model_name: str | None = None,
     ) -> list[tuple[str, float]]:
-        """Find images similar to the query vector using sqlite-vec."""
+        """Find images similar to the query vector using sqlite-vec.
+
+        Args:
+            conn: Open connection with the sqlite-vec extension loaded.
+            query_vector: The query embedding vector to search for.
+            limit: Maximum number of results.
+            model_name: Optional embedding model to restrict results to. Only
+                applied when the vec_embeddings table has a ``model_name``
+                column; vectors from other models are not comparable anyway.
+        """
         if not query_vector:
             raise ValueError("Query vector cannot be empty")
 
@@ -524,17 +574,23 @@ class FeaturesDatabase:
         query_vector = self._normalize_vector(query_vector)
         vector_str = self._format_vector_for_vec(query_vector)
 
+        # With the cosine distance metric, ``1 - distance`` is the cosine
+        # similarity. Legacy tables use L2 distance, where the value is only
+        # a monotone score, not a true similarity.
+        sql = """
+            SELECT image_path, 1.0 - distance as similarity
+            FROM vec_embeddings
+            WHERE embedding MATCH ?
+        """
+        params: list = [vector_str]
+        if model_name is not None and self._vec_table_has_model_column(conn):
+            sql += " AND model_name = ?"
+            params.append(model_name)
+        sql += " ORDER BY distance ASC LIMIT ?"
+        params.append(limit)
+
         try:
-            cursor = conn.execute(
-                """
-                SELECT image_path, 1.0 - distance as similarity
-                FROM vec_embeddings
-                WHERE embedding MATCH ?
-                ORDER BY distance ASC
-                LIMIT ?
-                """,
-                (vector_str, limit),
-            )
+            cursor = conn.execute(sql, params)
 
             results = []
             for row in cursor.fetchall():
@@ -1162,7 +1218,7 @@ class FeaturesDatabase:
 
                 # Try to save to vec_embeddings table if available
                 try:
-                    self.save_to_vec_table(conn, image_path, vector)
+                    self.save_to_vec_table(conn, image_path, vector, model_name=model_name)
                 except (RuntimeError, sqlite3.OperationalError, MemoryError, sqlite3.DatabaseError) as e:
                     # sqlite-vec library not available or vec_embeddings table doesn't exist
                     # but we still saved metadata to image_embeddings table
@@ -1232,11 +1288,12 @@ class FeaturesDatabase:
             ).fetchone()
             return row is not None
 
-    def get_all_embeddings(self, model_name: str) -> list[tuple[str, list[float]]]:
-        """Retrieve all embeddings for a specific model.
+    def get_all_embeddings(self, model_name: str | None = None) -> list[tuple[str, list[float]]]:
+        """Retrieve embeddings, optionally restricted to one model.
 
         Args:
-            model_name: Name of the embedding model.
+            model_name: Name of the embedding model to filter by. When
+                ``None``, embeddings for all models are returned.
 
         Returns:
             List of (image_path, vector) tuples.
@@ -1249,11 +1306,16 @@ class FeaturesDatabase:
             return []
 
         with self.get_connection() as conn:
-            # Get all image paths, dimensions, and blobs for this model
-            rows = conn.execute(
-                "SELECT image_path, embedding_dimension, embedding_blob FROM image_embeddings WHERE model_name = ?",
-                (model_name,),
-            ).fetchall()
+            # Get all image paths, dimensions, and blobs (optionally per model)
+            if model_name is not None:
+                rows = conn.execute(
+                    "SELECT image_path, embedding_dimension, embedding_blob FROM image_embeddings WHERE model_name = ?",
+                    (model_name,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT image_path, embedding_dimension, embedding_blob FROM image_embeddings"
+                ).fetchall()
 
             results = []
             for image_path, dimension, blob in rows:
@@ -1281,7 +1343,8 @@ class FeaturesDatabase:
         date are excluded.
 
         Args:
-            model_name: Embedding model name to filter by.
+            model_name: Embedding model name to filter by. When ``None``,
+                embeddings for all models are considered.
             date_start: Inclusive start date (``YYYY-MM-DD``).
             date_end: Inclusive end date (``YYYY-MM-DD``).
 
@@ -1290,24 +1353,23 @@ class FeaturesDatabase:
         """
         if not self.db_path.exists():
             return []
-        if not model_name:
-            return []
 
         with self.get_connection() as conn:
             # Normalise EXIF-style "YYYY:MM:DD ..." to "YYYY-MM-DD ..." and
             # compare only the date prefix so the time component is ignored.
-            rows = conn.execute(
-                """
+            sql = """
                 SELECT ie.image_path, ie.embedding_dimension, ie.embedding_blob
                 FROM image_embeddings ie
                 JOIN image_metadata im ON im.image_path = ie.image_path
-                WHERE ie.model_name = ?
-                  AND substr(replace(
-                      COALESCE(im.date_taken, im.date_created, im.date_modified),
-                      ':', '-'), 1, 10) BETWEEN ? AND ?
-                """,
-                (model_name, date_start, date_end),
-            ).fetchall()
+                WHERE substr(replace(
+                    COALESCE(im.date_taken, im.date_created, im.date_modified),
+                    ':', '-'), 1, 10) BETWEEN ? AND ?
+            """
+            params: list = [date_start, date_end]
+            if model_name is not None:
+                sql += " AND ie.model_name = ?"
+                params.append(model_name)
+            rows = conn.execute(sql, params).fetchall()
 
             results = []
             for image_path, dimension, blob in rows:
@@ -1320,7 +1382,9 @@ class FeaturesDatabase:
                         continue
             return results
 
-    def find_similar(self, query_vector: list[float], limit: int = 10) -> list[tuple[str, float]]:
+    def find_similar(
+        self, query_vector: list[float], limit: int = 10, model_name: str | None = None
+    ) -> list[tuple[str, float]]:
         """Find images similar to the query vector using cosine similarity.
 
         Uses sqlite-vec to perform fast vector similarity search.
@@ -1329,6 +1393,9 @@ class FeaturesDatabase:
         Args:
             query_vector: The query embedding vector to search for.
             limit: Maximum number of results to return (default: 10).
+            model_name: Optional embedding model to restrict results to.
+                Vectors from different models are not comparable; pass the
+                model that produced the query vector when known.
 
         Returns:
             List of (image_path, similarity_score) tuples, sorted by score DESC.
@@ -1358,7 +1425,7 @@ class FeaturesDatabase:
             # independently).
             self._ensure_extension_loaded(conn)
             # Use vec_find_similar for sqlite-vec search
-            return self.vec_find_similar(conn, query_vector, limit=limit)
+            return self.vec_find_similar(conn, query_vector, limit=limit, model_name=model_name)
 
     def find_similar_rest(
         self,
@@ -1376,7 +1443,9 @@ class FeaturesDatabase:
 
         Args:
             query_vector: The query embedding vector to search for.
-            model_name: Optional filter by embedding model name.
+            model_name: Optional filter by embedding model name. When
+                ``None``, embeddings from all models are searched (rows whose
+                dimension differs from the query are skipped below).
             limit: Maximum number of results to return (default: 10).
             date_start: Optional inclusive start date (``YYYY-MM-DD``). When
                 provided together with ``date_end``, results are restricted to
@@ -1402,7 +1471,7 @@ class FeaturesDatabase:
         if date_start and date_end:
             embeddings = self.get_embeddings_date_filtered(model_name, date_start, date_end)
         else:
-            embeddings = self.get_all_embeddings(model_name) if model_name else []
+            embeddings = self.get_all_embeddings(model_name)
 
         if not embeddings:
             logger.warning("No embeddings found in database")
@@ -1411,20 +1480,20 @@ class FeaturesDatabase:
         # Compute similarity for each embedding
         results = []
         for image_path, vector in embeddings:
+            # Vectors from a different embedding model have misaligned axes;
+            # comparing them (even truncated) yields meaningless scores, so
+            # skip them instead of guessing.
+            if len(vector) != len(query_vector):
+                logger.warning(
+                    "Skipping %s: dimension mismatch (query=%s, stored=%s); "
+                    "reprocess the folder with the current embedding model",
+                    image_path,
+                    len(query_vector),
+                    len(vector),
+                )
+                continue
             try:
-                # Ensure vectors are the same dimension
-                if len(vector) != len(query_vector):
-                    logger.warning(
-                        "Dimension mismatch for %s: query=%s, stored=%s", image_path, len(query_vector), len(vector)
-                    )
-                    # Pad or truncate to match
-                    min_dim = min(len(query_vector), len(vector))
-                    q_vec = query_vector[:min_dim]
-                    s_vec = vector[:min_dim]
-                    similarity = self.cosine_similarity(q_vec, s_vec)
-                else:
-                    similarity = self.cosine_similarity(query_vector, vector)
-
+                similarity = self.cosine_similarity(query_vector, vector)
                 results.append((image_path, similarity))
             except Exception as e:
                 logger.error("Failed to compute similarity for %s: %s", image_path, e)

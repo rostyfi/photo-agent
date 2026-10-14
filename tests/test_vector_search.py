@@ -250,3 +250,100 @@ class TestVectorDatabase:
         assert emb2 is not None
         assert len(emb1) == 3
         assert len(emb2) == 4
+
+
+class TestRestSearchModelHandling:
+    """Tests for find_similar_rest model filtering and dimension handling."""
+
+    @pytest.fixture
+    def temp_db(self):
+        """Create a temporary database for testing (no sqlite-vec needed)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = FeaturesDatabase(Path(tmpdir) / "test_features.db")
+            yield db
+            db.close()
+
+    def test_find_similar_rest_no_model_returns_all_models(self, temp_db):
+        """model_name=None means "no filter": embeddings from all models are searched."""
+        temp_db.save_embedding("/a.jpg", "model-a", [1.0, 0.0, 0.0])
+        temp_db.save_embedding("/b.jpg", "model-b", [0.0, 1.0, 0.0])
+
+        results = temp_db.find_similar_rest([1.0, 0.0, 0.0], None, limit=10)
+        assert {p for p, _ in results} == {"/a.jpg", "/b.jpg"}
+
+    def test_find_similar_rest_skips_dimension_mismatch(self, temp_db):
+        """Stored vectors whose dimension differs from the query are skipped,
+        not silently truncated to a misaligned prefix."""
+        temp_db.save_embedding("/same_dim.jpg", "m", [1.0, 0.0])
+        temp_db.save_embedding("/other_dim.jpg", "m", [1.0, 0.0, 0.0, 0.0, 0.0])
+
+        results = temp_db.find_similar_rest([1.0, 0.0], "m", limit=10)
+        assert {p for p, _ in results} == {"/same_dim.jpg"}
+
+    def test_get_all_embeddings_without_model_returns_all(self, temp_db):
+        """get_all_embeddings(None) returns embeddings for every model."""
+        temp_db.save_embedding("/a.jpg", "model-a", [0.1, 0.2])
+        temp_db.save_embedding("/a.jpg", "model-b", [0.3, 0.4])
+
+        assert len(temp_db.get_all_embeddings(None)) == 2
+        assert len(temp_db.get_all_embeddings("model-a")) == 1
+
+
+class TestVecTableModelColumn:
+    """Tests for the model_name column in the vec_embeddings virtual table."""
+
+    @pytest.fixture
+    def temp_db(self):
+        """Create a temporary database with vector search initialized."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = FeaturesDatabase(Path(tmpdir) / "test_features.db")
+            try:
+                db.init_vector_search()
+            except RuntimeError:
+                pytest.skip("sqlite-vec not available")
+            yield db
+            db.close()
+
+    def test_vec_search_can_filter_by_model(self, temp_db):
+        """Rows are tagged with their model and vec search can filter by it."""
+        temp_db.save_embedding("/test/a.jpg", "model-a", [1.0, 0.0, 0.0])
+        temp_db.save_embedding("/test/b.jpg", "model-b", [0.0, 1.0, 0.0])
+
+        with temp_db.get_connection() as conn:
+            temp_db._ensure_extension_loaded(conn)
+            assert temp_db._vec_table_has_model_column(conn)
+
+            all_results = temp_db.vec_find_similar(conn, [1.0, 0.0, 0.0], limit=10)
+            assert {p for p, _ in all_results} == {"/test/a.jpg", "/test/b.jpg"}
+
+            filtered = temp_db.vec_find_similar(conn, [1.0, 0.0, 0.0], limit=10, model_name="model-a")
+            assert [p for p, _ in filtered] == ["/test/a.jpg"]
+
+        # find_similar passes the model filter through
+        results = temp_db.find_similar([1.0, 0.0, 0.0], limit=10, model_name="model-b")
+        assert [p for p, _ in results] == ["/test/b.jpg"]
+
+    def test_vec_table_keeps_one_row_per_image_across_models(self, temp_db):
+        """Saving a second model for the same image replaces the old row."""
+        temp_db.save_embedding("/test/a.jpg", "model-a", [1.0, 0.0, 0.0])
+        temp_db.save_embedding("/test/a.jpg", "model-b", [0.0, 1.0, 0.0])
+
+        with temp_db.get_connection() as conn:
+            temp_db._ensure_extension_loaded(conn)
+            rows = conn.execute("SELECT image_path, model_name FROM vec_embeddings").fetchall()
+            assert rows == [("/test/a.jpg", "model-b")]
+
+    def test_save_to_vec_table_legacy_schema(self, temp_db):
+        """Tables created before the model column existed still accept writes
+        and ignore the model filter."""
+        with temp_db.get_connection() as conn:
+            temp_db._ensure_extension_loaded(conn)
+            conn.execute("DROP TABLE vec_embeddings")
+            conn.execute("CREATE VIRTUAL TABLE vec_embeddings USING vec0(image_path TEXT, embedding float[2048])")
+            conn.commit()
+
+            assert not temp_db._vec_table_has_model_column(conn)
+            assert temp_db.save_to_vec_table(conn, "/test/legacy.jpg", [1.0, 0.0, 0.0], model_name="model-a")
+
+            results = temp_db.vec_find_similar(conn, [1.0, 0.0, 0.0], limit=10, model_name="model-a")
+            assert [p for p, _ in results] == ["/test/legacy.jpg"]

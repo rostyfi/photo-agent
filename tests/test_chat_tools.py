@@ -754,6 +754,137 @@ class TestProcessTool:
 
         assert captured["concurrency"] == 4
 
+    def test_process_backfills_skipped_files(self, tmp_path):
+        """Already-processed photos are passed to backfill_missing_embeddings."""
+        from src.config import AppConfig
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ProcessTool(config)
+
+        captured = {}
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        class FakeProcessor:
+            def __init__(self, *a, **kw):
+                pass
+
+            def process_paths(self, paths, **kw):
+                return {
+                    "total_found": len(paths),
+                    "processed": len(paths),
+                    "skipped": 0,
+                    "successes": len(paths),
+                    "failures": 0,
+                    "results": [],
+                }
+
+            def backfill_missing_embeddings(self, paths):
+                captured["backfilled_paths"] = list(paths)
+                return len(paths)
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = [str(tmp_path / "pending.jpg")]
+        fake_lister.get_all_files.return_value = [
+            str(tmp_path / "pending.jpg"),
+            str(tmp_path / "done1.jpg"),
+            str(tmp_path / "done2.jpg"),
+        ]
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+            patch("plugins.llm.create_extractor"),
+            patch("src.sequential_processor.SequentialProcessor", FakeProcessor),
+            patch("src.simple_processing_tracker.SimpleProcessingTracker"),
+            patch("src.batch_state.write_batch_state"),
+            patch("src.batch_state.clear_batch_state"),
+            patch("src.utils.compute_duration_stats", return_value={
+                "min_ms": 0, "max_ms": 0, "avg_ms": 0, "total_s": 0.0,
+            }),
+        ):
+            result = tool.execute(folder_path=str(tmp_path))
+
+        assert result.status == "success"
+        assert sorted(captured["backfilled_paths"]) == sorted(
+            [str(tmp_path / "done1.jpg"), str(tmp_path / "done2.jpg")]
+        )
+
+    def test_process_with_no_pending_backfills_in_background(self, tmp_path):
+        """When nothing is pending, a background backfill of all photos starts."""
+        from src.config import AppConfig
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ProcessTool(config)
+
+        started = []
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                started.append((target, args))
+
+            def start(self):
+                pass  # don't run the backfill (it would hit the network)
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = []
+        fake_lister.get_all_files.return_value = [str(tmp_path / "done1.jpg")]
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+        ):
+            result = tool.execute(folder_path=str(tmp_path))
+
+        assert result.status == "success"
+        assert "missing embeddings" in result.response
+        assert len(started) == 1
+        target, args = started[0]
+        assert target is process_module._backfill_in_background
+        assert args == (str(tmp_path), [str(tmp_path / "done1.jpg")])
+
+    def test_process_with_no_pending_and_no_files_keeps_plain_message(self, tmp_path):
+        """No pending and no already-processed photos: original message, no backfill."""
+        from src.config import AppConfig
+        from src.services.chat_tools import process as process_module
+        from src.services.chat_tools.process import ProcessTool
+
+        config = AppConfig(llm_host="localhost", llm_port=11434, llm_model="test")
+        tool = ProcessTool(config)
+
+        started = []
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False, **kwargs):
+                started.append((target, args))
+
+            def start(self):
+                pass
+
+        fake_lister = MagicMock()
+        fake_lister.get_pending_files.return_value = []
+        fake_lister.get_all_files.return_value = []
+
+        with (
+            patch.object(process_module.threading, "Thread", FakeThread),
+            patch("src.file_processing.ProcessableFileLister", return_value=fake_lister),
+        ):
+            result = tool.execute(folder_path=str(tmp_path))
+
+        assert result.status == "success"
+        assert result.response == "No photos to process. All photos in this folder have already been processed."
+        assert started == []
+
 
 class TestStatusTool:
     """Tests for StatusTool."""

@@ -72,15 +72,15 @@ class TestVectorRoundtrip:
 
 class TestRestVectorSearch:
     def test_rest_search_success(self, client):
-        """REST vector search endpoint returns a valid response structure."""
+        """REST vector search self-test finds and ranks the sample vectors."""
         resp = client.get("/_api/test_rest_vector_search")
         data = resp.get_json()
         assert resp.status_code == 200
         assert data["status"] == "success"
         assert data["rest_vector_search_available"] is True
         assert "test_results" in data
-        assert "found_results" in data["test_results"]
-        assert "test_passed" in data["test_results"]
+        assert data["test_results"]["found_results"] == 3
+        assert data["test_results"]["test_passed"] is True
         assert "top_results" in data["test_results"]
 
     def test_rest_search_handles_error(self, client):

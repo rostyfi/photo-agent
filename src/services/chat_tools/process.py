@@ -59,8 +59,30 @@ class ProcessTool(BaseTool):
             lister = ProcessableFileLister(folder_path, recursive=True)
             pending_files = lister.get_pending_files()
             total = len(pending_files)
+            # Already-processed photos are skipped by extraction but may still
+            # be missing embeddings — they are backfilled after processing.
+            pending_set = set(pending_files)
+            skipped_files = [f for f in lister.get_all_files() if f not in pending_set]
 
             if total == 0:
+                # Nothing to extract, but already-processed photos may still
+                # be missing embeddings — backfill them in the background.
+                if skipped_files:
+                    threading.Thread(
+                        target=_backfill_in_background,
+                        args=(folder_path, skipped_files),
+                        daemon=True,
+                    ).start()
+                    return ChatResponse(
+                        status="success",
+                        response=(
+                            "No photos to process. All photos in this folder have already been "
+                            f"processed. Checking {len(skipped_files)} photo(s) for missing embeddings "
+                            "in the background."
+                        ),
+                        sender="assistant",
+                        model="N/A",
+                    )
                 return ChatResponse(
                     status="success",
                     response="No photos to process. All photos in this folder have already been processed.",
@@ -138,6 +160,12 @@ class ProcessTool(BaseTool):
                         concurrency=config.batch_concurrency,
                     )
 
+                    # Backfill embeddings for photos that were already
+                    # processed (skipped above) but are missing them.
+                    backfilled = processor.backfill_missing_embeddings(skipped_files)
+                    if backfilled:
+                        logger.info("[Chat /process] Backfilled %d embedding(s) in %s", backfilled, folder_path)
+
                     # Write final state
                     durations = [
                         r.get("total_duration_ms")
@@ -186,3 +214,38 @@ class ProcessTool(BaseTool):
             return ChatResponse(
                 status="error", response=f"Failed to start processing: {e!s}", sender="assistant", model="N/A"
             )
+
+
+def _backfill_in_background(folder_path: str, paths: list[str]) -> None:
+    """Backfill missing embeddings for already-processed photos (web UI).
+
+    Runs in a daemon thread when ``/process`` finds nothing to extract but
+    already-processed photos may be missing embeddings (e.g. they were
+    processed before embeddings were enabled, or with another model).
+    """
+    import logging
+
+    from plugins.llm import create_extractor
+    from src.config import ProcessingConfig
+    from src.folder_settings import apply_folder_settings
+    from src.sequential_processor import backfill_embeddings
+
+    logger = logging.getLogger(__name__)
+    try:
+        config = ProcessingConfig.from_env()
+        apply_folder_settings(config, folder_path)
+        if not config.embedding_enabled:
+            return
+        extractor = create_extractor(
+            backend=config.backend,
+            host=config.host,
+            port=config.port,
+            model=config.model,
+            timeout=config.timeout,
+            default_prompt=config.default_prompt,
+        )
+        backfilled = backfill_embeddings(paths, extractor, folder=folder_path, config=config)
+        if backfilled:
+            logger.info("[Chat /process] Backfilled %d embedding(s) in %s", backfilled, folder_path)
+    except Exception as e:
+        logger.error("[Chat /process] Embedding backfill failed for %s: %s", folder_path, e)

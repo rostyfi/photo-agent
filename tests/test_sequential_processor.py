@@ -9,8 +9,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plugins.llm import create_extractor
+from src.config import ProcessingConfig
 from src.interfaces import ProcessingResult
-from src.sequential_processor import SequentialProcessor, process_image, process_paths
+from src.sequential_processor import (
+    SequentialProcessor,
+    backfill_embeddings,
+    process_image,
+    process_paths,
+)
+from src.sidecar.database import FeaturesDatabase
+from src.simple_processing_tracker import SimpleProcessingTracker
 
 
 @pytest.fixture
@@ -453,3 +461,178 @@ class TestBatchConcurrency:
         assert all(total == 4 for _, total in progress_calls)
         # Processed counts are 1..4 in some order
         assert sorted(processed for processed, _ in progress_calls) == [1, 2, 3, 4]
+
+
+def _make_embedding_processor(mock_extractor, temp_folder):
+    """Build a processor with a real folder DB and a mock embedding generator."""
+    config = ProcessingConfig(embedding_model="test-embedding-model")
+    proc = SequentialProcessor(mock_extractor, config=config, folder=temp_folder)
+    mock_gen = MagicMock()
+    mock_gen.generate_from_text.side_effect = lambda text, model=None: [1.0, 0.0, 0.0]
+    proc._embedding_generator = mock_gen
+    return proc
+
+
+def _write_image(folder, name):
+    path = Path(folder) / name
+    path.write_bytes(b"test image data")
+    return str(path)
+
+
+class TestEmbeddingGeneration:
+    """Tests for description-based embedding generation in process_image."""
+
+    @pytest.fixture
+    def processor(self, mock_extractor, temp_folder):
+        return _make_embedding_processor(mock_extractor, temp_folder)
+
+    def test_list_description_is_coerced(self, processor, temp_folder):
+        """A description returned as a list is joined, not crashed on."""
+        processor.extractor.extract_b64.return_value = ProcessingResult(
+            success=True,
+            model="test-model",
+            response='{"description": ["a cat", "on a mat"]}',
+            parsed={"description": ["a cat", "on a mat"]},
+        )
+        image_path = _write_image(temp_folder, "photo.jpg")
+        with patch("src.sequential_processor.encode_image_file", return_value="base64"):
+            result = processor.process_image(image_path)
+
+        assert result.success is True
+        assert result.embedding_error is None
+        embedded_text = processor._embedding_generator.generate_from_text.call_args[0][0]
+        assert embedded_text == "a cat, on a mat"
+        db = FeaturesDatabase(FeaturesDatabase.default_db_path(temp_folder))
+        try:
+            assert db.has_embedding(image_path, "test-embedding-model")
+        finally:
+            db.close()
+
+    def test_composite_text_used_when_description_empty(self, processor, temp_folder):
+        """Empty description but filled subjects/tags still produces an embedding."""
+        processor.extractor.extract_b64.return_value = ProcessingResult(
+            success=True,
+            model="test-model",
+            response='{"subjects": ["cat"], "tags": ["cat", "outdoors"]}',
+            parsed={"description": "", "subjects": ["cat"], "tags": ["cat", "outdoors"]},
+        )
+        image_path = _write_image(temp_folder, "photo.jpg")
+        with patch("src.sequential_processor.encode_image_file", return_value="base64"):
+            result = processor.process_image(image_path)
+
+        assert result.embedding_error is None
+        embedded_text = processor._embedding_generator.generate_from_text.call_args[0][0]
+        assert "cat" in embedded_text
+        assert "outdoors" in embedded_text
+
+    def test_no_embedding_when_extraction_fails(self, processor, temp_folder):
+        """A failed extraction produces no embedding and no misleading embedding_error."""
+        processor.extractor.extract_b64.return_value = ProcessingResult(
+            success=False,
+            error="timeout",
+            error_code="timeout",
+            model="test-model",
+        )
+        image_path = _write_image(temp_folder, "photo.jpg")
+        with patch("src.sequential_processor.encode_image_file", return_value="base64"):
+            result = processor.process_image(image_path)
+
+        assert result.success is False
+        assert result.embedding_error is None
+        processor._embedding_generator.generate_from_text.assert_not_called()
+
+
+class TestEmbeddingBackfill:
+    """Tests for backfilling embeddings of already-processed images."""
+
+    @pytest.fixture
+    def processor(self, mock_extractor, temp_folder):
+        return _make_embedding_processor(mock_extractor, temp_folder)
+
+    def _store_extraction(self, processor, image_path, description="a red bicycle"):
+        processor._db.save_extraction(
+            image_path,
+            {"success": True, "image_path": image_path, "parsed": {"description": description}},
+        )
+
+    def test_backfill_generates_missing_embedding(self, processor, temp_folder):
+        image_path = _write_image(temp_folder, "a.jpg")
+        self._store_extraction(processor, image_path)
+
+        backfilled = processor.backfill_missing_embeddings([image_path])
+
+        assert backfilled == 1
+        assert processor._db.has_embedding(image_path, "test-embedding-model")
+        embedded_text = processor._embedding_generator.generate_from_text.call_args[0][0]
+        assert embedded_text == "a red bicycle"
+
+    def test_backfill_skips_images_with_embedding(self, processor, temp_folder):
+        image_path = _write_image(temp_folder, "b.jpg")
+        self._store_extraction(processor, image_path)
+        processor._db.save_embedding(image_path, "test-embedding-model", [1.0, 0.0])
+
+        backfilled = processor.backfill_missing_embeddings([image_path])
+
+        assert backfilled == 0
+        processor._embedding_generator.generate_from_text.assert_not_called()
+
+    def test_backfill_treats_other_model_embedding_as_missing(self, processor, temp_folder):
+        """An embedding stored under a different model is regenerated."""
+        image_path = _write_image(temp_folder, "c.jpg")
+        self._store_extraction(processor, image_path)
+        processor._db.save_embedding(image_path, "old-model", [1.0, 0.0])
+
+        backfilled = processor.backfill_missing_embeddings([image_path])
+
+        assert backfilled == 1
+        assert processor._db.has_embedding(image_path, "test-embedding-model")
+
+    def test_backfill_without_stored_extraction_is_noop(self, processor, temp_folder):
+        image_path = _write_image(temp_folder, "d.jpg")
+
+        backfilled = processor.backfill_missing_embeddings([image_path])
+
+        assert backfilled == 0
+        processor._embedding_generator.generate_from_text.assert_not_called()
+
+    def test_process_paths_resume_backfills_and_reports(self, processor, temp_folder):
+        """resume=True backfills skipped images and reports the count."""
+        paths = [_write_image(temp_folder, f"img_{i}.jpg") for i in range(2)]
+        tracker = SimpleProcessingTracker(temp_folder)
+        for p in paths:
+            self._store_extraction(processor, p)
+            tracker.mark_completed(p)
+
+        result = processor.process_paths(paths, resume=True)
+
+        assert result["skipped"] == 2
+        assert result["processed"] == 0
+        assert result["embeddings_backfilled"] == 2
+        for p in paths:
+            assert processor._db.has_embedding(p, "test-embedding-model")
+
+
+class TestStandaloneConfigPassthrough:
+    """The standalone helpers forward config to the processor (CLI flag propagation)."""
+
+    def test_process_paths_forwards_config(self, mock_extractor):
+        config = ProcessingConfig(embedding_model="test-embedding-model")
+        with patch("src.sequential_processor.SequentialProcessor") as mock_cls:
+            mock_proc = MagicMock()
+            mock_proc.process_paths.return_value = {"results": []}
+            mock_cls.return_value = mock_proc
+
+            process_paths(["/x.jpg"], mock_extractor, resume=False, config=config)
+
+        assert mock_cls.call_args.kwargs["config"] is config
+
+    def test_backfill_embeddings_wrapper(self, mock_extractor, temp_folder):
+        with patch("src.sequential_processor.SequentialProcessor") as mock_cls:
+            mock_proc = MagicMock()
+            mock_proc.backfill_missing_embeddings.return_value = 3
+            mock_cls.return_value = mock_proc
+
+            n = backfill_embeddings(["/x.jpg"], mock_extractor, folder=temp_folder)
+
+        assert n == 3
+        mock_proc.backfill_missing_embeddings.assert_called_once_with(["/x.jpg"])

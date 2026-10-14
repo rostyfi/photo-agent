@@ -78,6 +78,24 @@ class TestDateFilteredSearch:
         assert len(results) == 1
         assert results[0][0] == "/img/x.jpg"
 
+    def test_get_embeddings_date_filtered_without_model(self, temp_db):
+        """model_name=None considers embeddings from all models."""
+        _save_image(temp_db, "/img/a.jpg", "model-a", [1.0, 0.0], "2025:07:01 12:00:00")
+        _save_image(temp_db, "/img/b.jpg", "model-b", [0.0, 1.0], "2024:07:01 12:00:00")
+
+        results = temp_db.get_embeddings_date_filtered(None, "2024-01-01", "2026-12-31")
+        assert {p for p, _ in results} == {"/img/a.jpg", "/img/b.jpg"}
+
+    def test_find_similar_rest_no_model_with_date_filter(self, temp_db):
+        """find_similar_rest with model_name=None works together with a date window."""
+        _save_image(temp_db, "/img/in.jpg", "model-a", [1.0, 0.0], "2025:07:01 12:00:00")
+        _save_image(temp_db, "/img/out.jpg", "model-b", [1.0, 0.0], "2024:07:01 12:00:00")
+
+        results = temp_db.find_similar_rest(
+            [1.0, 0.0], None, limit=10, date_start="2025-01-01", date_end="2025-12-31"
+        )
+        assert [p for p, _ in results] == ["/img/in.jpg"]
+
 
 class TestFindToolParseArgs:
     def _tool(self):
