@@ -188,6 +188,108 @@ class TestOllamaPhotoExtractor(unittest.TestCase):
         # Only one call — no retry needed
         self.assertEqual(mock_post.call_count, 1)
 
+    def test_build_payload_with_format(self):
+        payload = self.extractor._build_payload("base64data", "test prompt", format="json")
+        self.assertEqual(payload["format"], "json")
+
+    def test_build_payload_without_format_omits_field(self):
+        payload = self.extractor._build_payload("base64data", "test prompt")
+        self.assertNotIn("format", payload)
+
+    def test_is_valid_extraction(self):
+        valid = OllamaPhotoExtractor._is_valid_extraction
+        self.assertFalse(valid(None))
+        self.assertFalse(valid("text"))
+        self.assertFalse(valid([1, 2, 3]))
+        self.assertFalse(valid({}))
+        self.assertFalse(valid({"description": ""}))
+        self.assertFalse(valid({"description": "   "}))
+        self.assertFalse(valid({"tags": ["a"]}))
+        self.assertTrue(valid({"description": "a cat"}))
+        self.assertTrue(valid({"caption": "a cat"}))
+
+    def test_extract_retries_when_json_valid_but_description_empty(self):
+        """Valid JSON without a usable description triggers the JSON-mode retry."""
+        first_response = MagicMock()
+        first_response.raise_for_status.return_value = None
+        first_response.json.return_value = {
+            "response": '{"description": "", "tags": ["cat"]}',
+            "done": True,
+            "total_duration": 1_000_000_000,
+            "eval_count": 10,
+        }
+        second_response = MagicMock()
+        second_response.raise_for_status.return_value = None
+        second_response.json.return_value = {
+            "response": '{"description": "A cat on a mat.", "tags": ["cat"]}',
+            "done": True,
+            "total_duration": 2_000_000_000,
+            "eval_count": 20,
+        }
+
+        with patch.object(self.extractor._session, "post", side_effect=[first_response, second_response]) as mock_post:
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.parsed["description"], "A cat on a mat.")
+        self.assertEqual(mock_post.call_count, 2)
+        # The retry request must use Ollama JSON mode to force valid JSON output
+        retry_payload = mock_post.call_args_list[1].kwargs["json"]
+        self.assertEqual(retry_payload["format"], "json")
+        # The first attempt must not force JSON mode
+        first_payload = mock_post.call_args_list[0].kwargs["json"]
+        self.assertNotIn("format", first_payload)
+
+    def test_extract_retries_on_non_dict_json(self):
+        """A JSON array/scalar response is not a usable extraction — retry."""
+        first_response = MagicMock()
+        first_response.raise_for_status.return_value = None
+        first_response.json.return_value = {
+            "response": '["not", "an", "object"]',
+            "done": True,
+            "total_duration": 0,
+            "eval_count": 1,
+        }
+        second_response = MagicMock()
+        second_response.raise_for_status.return_value = None
+        second_response.json.return_value = {
+            "response": '{"description": "ok"}',
+            "done": True,
+            "total_duration": 0,
+            "eval_count": 2,
+        }
+
+        with patch.object(self.extractor._session, "post", side_effect=[first_response, second_response]) as mock_post:
+            result = self.extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertEqual(result.parsed, {"description": "ok"})
+        self.assertEqual(mock_post.call_count, 2)
+
+    def test_extract_no_retry_when_json_retries_zero(self):
+        """json_retries=0 disables the format retry; raw-text fallback still applies."""
+        extractor = OllamaPhotoExtractor(
+            host="localhost",
+            port=11434,
+            model="test-model",
+            timeout=30,
+            max_retries=1,
+            json_retries=0,
+        )
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "response": "not json",
+            "done": True,
+            "total_duration": 0,
+            "eval_count": 1,
+        }
+
+        with patch.object(extractor._session, "post", return_value=mock_response) as mock_post:
+            result = extractor.extract_b64("ZmFrZS1pbWFnZS1kYXRh")
+
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertEqual(result.parsed, {"description": "not json"})
+
     def test_extract_no_retry_on_failure(self):
         """No retry when the first attempt fails (success=False)."""
         with patch.object(

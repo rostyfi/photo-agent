@@ -481,7 +481,7 @@ When a HEIC image is processed or previewed in the web UI, it is automatically c
 
 ## Notes
 
-- The default prompt asks the model to return JSON. Not all models will strictly obey; check `result["parsed"]`.
+- The default prompt asks the model to return JSON. Not all models will strictly obey; check `result["parsed"]`. When the response is not a usable extraction — invalid JSON, JSON that is not an object, or an object without a non-empty `description`/`caption` — the extractor automatically retries (once by default) with a stricter JSON-only prompt and Ollama JSON mode (`format="json"`), which constrains the model to emit valid JSON. If all attempts fail to produce JSON, the raw response text is stored as the description so the database always has a usable value.
 - You can override the default prompt with any custom text via the `--prompt` CLI argument, the web UI text area, or the `prompt` parameter in code.
 - When processing large folders, consider potential memory usage from base64 encoding many images at once.
 - The application now uses a **simplified processing tracker** (`SimpleProcessingTracker`) that stores tracking information directly in the SQLite database instead of using WAL files.
