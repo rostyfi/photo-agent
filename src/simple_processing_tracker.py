@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.constants import STATUS_COMPLETED, STATUS_FAILED
+from src.processed_cache import clear_processed_cache
 from src.sqlite_utils import open_connection
 
 logger = logging.getLogger(__name__)
@@ -176,8 +177,6 @@ class SimpleProcessingTracker:
             conn.commit()
             logger.debug("Marked %s as completed", image_path)
             # Invalidate the processed set cache so new queries get fresh data
-            from src.discovery import clear_processed_cache
-
             clear_processed_cache(str(self.folder))
         except Exception as e:
             logger.error("Failed to mark %s as completed: %s", image_path, e)
@@ -209,8 +208,6 @@ class SimpleProcessingTracker:
             conn.commit()
             logger.debug("Marked %s as failed: %s", image_path, error_msg)
             # Invalidate the processed set cache so new queries get fresh data
-            from src.discovery import clear_processed_cache
-
             clear_processed_cache(str(self.folder))
         except Exception as e:
             logger.error("Failed to mark %s as failed: %s", image_path, e)
