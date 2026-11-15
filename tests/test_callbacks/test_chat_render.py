@@ -167,7 +167,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "photo_paths": [f"/photos/{i}.jpg" for i in range(5)],
             "count": 5,
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=2):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=2):
             messages = _history_to_messages([entry], "/photos")
         self.assertTrue(_has_component_with_id(messages, "btn-start-slideshow", index=0))
         self.assertFalse(_has_gallery_grid(messages))
@@ -180,7 +180,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "photo_paths": [f"/photos/{i}.jpg" for i in range(3)],
             "count": 3,
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=3):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=3):
             messages = _history_to_messages([entry], "/photos")
         # The gallery always includes a "Start slideshow" button so the user
         # can open the fullscreen viewer even for small result sets.
@@ -195,7 +195,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "photo_paths": [f"/photos/{i}.jpg" for i in range(100)],
             "count": 100,
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=0):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=0):
             messages = _history_to_messages([entry], "/photos")
         self.assertTrue(_has_component_with_id(messages, "btn-start-slideshow", index=0))
         self.assertTrue(_has_gallery_grid(messages))
@@ -211,7 +211,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "total_photos": 5,
             "selected_tags": ["nature"],
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=2):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=2):
             messages = _history_to_messages([entry], "/photos")
         self.assertTrue(_has_component_with_id(messages, "btn-start-slideshow", index=0))
         self.assertFalse(_has_gallery_grid(messages))
@@ -230,7 +230,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "total_photos": 100,
             "selected_tags": ["nature"],
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=50):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=50):
             messages = _history_to_messages([entry], "/photos")
         # Above threshold (100 > 50): gallery replaced by slideshow button.
         self.assertTrue(_has_component_with_id(messages, "btn-start-slideshow", index=0))
@@ -252,7 +252,7 @@ class TestHistoryToMessages(unittest.TestCase):
             "total_photos": 25,
             "selected_tags": ["nature"],
         }
-        with patch("src.callbacks.chat._slideshow_threshold_for", return_value=50):
+        with patch("src.callbacks.chat_render._slideshow_threshold_for", return_value=50):
             messages = _history_to_messages([entry], "/photos")
         self.assertTrue(_has_component_with_id(messages, "btn-start-slideshow", index=0))
         self.assertTrue(_has_gallery_grid(messages))

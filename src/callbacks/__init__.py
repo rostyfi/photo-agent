@@ -2,18 +2,19 @@ from dash import Input, Output
 
 from src.config import AppConfig
 
-from .chat import (
+from .chat_nav import register_chat_history_navigation_callback, register_chat_scroll_callback
+from .chat_render import register_chat_history_init_callback
+from .chat_send import (
     register_chat_callback,
     register_chat_endpoint_test_callback,
-    register_chat_history_init_callback,
-    register_chat_history_navigation_callback,
-    register_chat_scroll_callback,
     register_chat_stream_callback,
+    register_clear_chat_callback,
+)
+from .chat_sort import register_gallery_sort_callback
+from .chat_tags import (
     register_chat_tag_clear_callback,
     register_chat_tag_click_callback,
     register_chat_tag_remove_callback,
-    register_clear_chat_callback,
-    register_gallery_sort_callback,
 )
 from .errors import register_all_errors_callbacks
 from .health_settings import (

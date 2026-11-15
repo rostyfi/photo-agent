@@ -4,7 +4,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html
 
-import src.callbacks.chat as _chat
+import src.callbacks.chat_sort as _chat
 from src.callbacks.chat import register_gallery_sort_callback
 from tests.test_callbacks import find_callback, patch_callback_context
 
